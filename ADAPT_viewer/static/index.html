@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADAPT ARPES Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>ADAPT</h1>
+                <p>ARPES Analysis Tool</p>
+            </div>
+
+            <!-- Section 1: Load Data -->
+            <div class="control-group">
+                <div class="control-group-title">Load Data</div>
+                <div class="file-input-row">
+                    <button id="local-file-btn" class="secondary-btn">Open Local File</button>
+                    <input type="file" id="system-file-input" style="display: none;" accept=".h5,.nxs,.hdf5,.zip,.ibw">
+                </div>
+                <div class="file-input-row">
+                    <span id="selected-file-label" class="file-label">No file selected</span>
+                </div>
+                <div style="display: flex; gap: 5px; margin-top: 5px;">
+                    <button id="load-btn" class="primary-btn" disabled style="display: none;">Load Data</button>
+                    <button id="reset-data-btn" class="secondary-btn" style="flex: 1;">Reset</button>
+                </div>
+            </div>
+
+            <!-- Section 2: Colormap & Contrast -->
+            <div class="control-group">
+                <div class="control-group-title">Colormap</div>
+                <div class="label-row">
+                    <select id="colormap-select" style="flex: 1;">
+                        <option value="viridis">Viridis</option>
+                        <option value="plasma">Plasma</option>
+                        <option value="inferno">Inferno</option>
+                        <option value="magma">Magma</option>
+                        <option value="cividis">Cividis</option>
+                        <option value="hot">Hot</option>
+                        <option value="cool">Cool</option>
+                        <option value="bone">Bone</option>
+                        <option value="seismic">Seismic</option>
+                        <option value="gray">Grayscale</option>
+                    </select>
+                    <div class="checkbox-row" style="margin: 0; margin-left: 8px;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="invert-colormap-check">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">Inv</span>
+                    </div>
+                </div>
+
+                <div class="slider-group">
+                    <div class="input-row">
+                        <label>Min</label>
+                        <span id="cmin-val">0</span>
+                        <label style="margin-left: auto; margin-right: 10px;">Max</label>
+                        <span id="cmax-val">100</span>
+                    </div>
+                    <div class="range-slider-container">
+                        <div class="range-slider-track"></div>
+                        <input type="range" id="cmin-slider" min="0" max="100" value="0"
+                            class="range-slider-input range-min">
+                        <input type="range" id="cmax-slider" min="0" max="100" value="100"
+                            class="range-slider-input range-max">
+                    </div>
+                </div>
+
+                <div class="button-row">
+                    <button id="auto-contrast-btn" class="secondary-btn">Auto</button>
+                    <button id="reset-contrast-btn" class="secondary-btn">Reset</button>
+                </div>
+            </div>
+
+            <!-- Section 3: Enhancement (CLAHE + Curvature) -->
+            <div class="control-group">
+                <div class="control-group-title"
+                    style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"
+                    id="enhance-toggle-header">
+                    <span>Enhancement</span>
+                    <span id="enhance-header-icon" class="rotate-icon">▼</span>
+                </div>
+                <div id="enhance-controls" style="margin-top: 10px;">
+                    <div class="checkbox-row">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="enhance-enable-check" checked>
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">Enable</span>
+                    </div>
+
+                    <!-- CLAHE -->
+                    <div class="checkbox-row" style="margin-top: 10px;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="clahe-enable-check">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">CLAHE</span>
+                    </div>
+                    <div class="slider-group" id="clahe-controls" style="display: none;">
+                        <div class="input-row">
+                            <label>Clip Limit</label>
+                            <span id="clahe-val">0.01</span>
+                        </div>
+                        <input type="range" id="clahe-slider" min="0" max="0.05" step="0.001" value="0.01">
+                    </div>
+
+                    <!-- Curvature -->
+                    <div class="checkbox-row" style="margin-top: 10px;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="curvature-enable-check">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">Curvature</span>
+                    </div>
+                    <div class="slider-group" id="curvature-controls" style="display: none;">
+                        <div class="input-row">
+                            <label>Strength</label>
+                            <span id="curvature-val">1.0</span>
+                        </div>
+                        <input type="range" id="curvature-slider" min="0" max="5" step="0.1" value="1.0">
+                    </div>
+
+                    <!-- Keep smoothing/sharpen/bg hidden but functional -->
+                    <input type="hidden" id="smooth-slider" value="0">
+                    <input type="hidden" id="sharpen-slider" value="0">
+                    <input type="hidden" id="bg-slider" value="0">
+                </div>
+            </div>
+
+            <!-- Section 4: Parameters (hv, EF, theta) -->
+            <div class="control-group" id="parameters-controls">
+                <div class="control-group-title">Parameters</div>
+                <div class="input-row">
+                    <label>hv (eV)</label>
+                    <input type="number" id="hv-input" value="21.2" step="0.1" style="width: 80px;">
+                </div>
+                <div class="input-row">
+                    <label>EF (eV)</label>
+                    <input type="number" id="ef-input" value="0" step="0.01" style="width: 80px;">
+                </div>
+                <div class="input-row">
+                    <label>θ (deg)</label>
+                    <input type="number" id="theta-input" value="0" step="0.1" style="width: 80px;">
+                </div>
+                <div class="input-row" id="scan-input-row" style="display: none;">
+                    <label>Scan</label>
+                    <input type="number" id="scan-input" value="0" step="1" style="width: 80px;">
+                </div>
+                <button id="get-from-cursor-btn" class="secondary-btn" style="width: 100%; margin-top: 5px;">
+                    Get from Cursor
+                </button>
+            </div>
+
+            <!-- Section 5: Alignment -->
+            <div class="control-group" id="alignment-controls">
+                <div class="control-group-title">Alignment</div>
+                <div style="display: flex; gap: 5px;">
+                    <button id="align-energy-btn" class="secondary-btn" style="flex: 1;">Align Energy</button>
+                    <button id="align-theta-btn" class="secondary-btn" style="flex: 1;">Align Theta</button>
+                </div>
+            </div>
+
+            <!-- Section 6: Convert to k -->
+            <div class="control-group" id="convert-controls">
+                <div class="control-group-title">Convert</div>
+                <button id="angle-to-k-btn" class="primary-btn" style="width: 100%;">Convert to k</button>
+                <!-- Hidden elements for compatibility -->
+                <input type="hidden" id="work-func-input" value="4.5">
+                <input type="hidden" id="inner-pot-input" value="10.0">
+            </div>
+
+            <!-- Section 7: Crop -->
+            <div class="control-group" id="crop-controls">
+                <div class="control-group-title">Crop</div>
+                <button id="crop-btn" class="secondary-btn" style="width: 100%;">Start Crop</button>
+                <div id="crop-actions" style="display: none; margin-top: 8px; flex-direction: column; gap: 5px;">
+                    <button id="confirm-crop-btn" class="primary-btn">Confirm Crop</button>
+                    <button id="cancel-crop-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Section 8: Export -->
+            <div class="control-group">
+                <div class="control-group-title">Export</div>
+                <button id="export-btn" class="secondary-btn" style="width: 100%;">Export Image</button>
+                <button id="export-profiles-btn" class="secondary-btn" style="width: 100%; margin-top: 5px;">Export
+                    Profiles</button>
+            </div>
+
+            <!-- Hidden controls for backward compatibility -->
+            <div style="display: none;">
+                <div id="axis-controls">
+                    <select id="x-axis-type">
+                        <option value="angle">Angle</option>
+                        <option value="k">k</option>
+                    </select>
+                    <select id="y-axis-type">
+                        <option value="energy">Energy</option>
+                    </select>
+                    <select id="z-axis-type">
+                        <option value="angle">Angle</option>
+                        <option value="scan">Scan</option>
+                    </select>
+                    <input type="text" id="x-axis-label">
+                    <input type="text" id="y-axis-label">
+                    <input type="text" id="z-axis-label">
+                </div>
+                <div id="z-axis-group"></div>
+                <div id="calibration-controls">
+                    <button id="set-angle-zero-btn"></button>
+                    <button id="set-fermi-btn"></button>
+                    <button id="reset-calibration-btn"></button>
+                    <div id="calibration-actions">
+                        <button id="confirm-calibration-btn"></button>
+                        <button id="cancel-calibration-btn"></button>
+                    </div>
+                </div>
+                <div id="3d-mapping-controls">
+                    <select id="mapping-mode-select">
+                        <option value="kx-ky">kx-ky</option>
+                        <option value="kx-kz">kx-kz</option>
+                    </select>
+                    <div id="kz-mode-group">
+                        <select id="kz-mode-select">
+                            <option value="convert">convert</option>
+                            <option value="keep">keep</option>
+                        </select>
+                    </div>
+                </div>
+                <button id="auto-set-ef-btn"></button>
+                <div id="crop-controls">
+                    <button id="crop-btn"></button>
+                    <div id="crop-actions">
+                        <button id="confirm-crop-btn"></button>
+                        <button id="cancel-crop-btn"></button>
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+
+
+        <!-- Main Visualization Area -->
+        <main class="main-view">
+            <div id="plot-container" class="plot-container">
+                <!-- Canvas elements will be injected here by JS -->
+                <div class="placeholder-text">Select a file to begin analysis</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- File Browser Modal -->
+    <div id="file-browser-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select Data File</h2>
+                <button id="fb-close-btn" class="close-btn">&times;</button>
+            </div>
+            <div id="file-browser-body"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="js/app.js"></script>
+</body>
+
+</html>
