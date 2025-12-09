@@ -775,7 +775,7 @@ export function fitFermiEdge2D(data, width, height, energyAxis, opts = {}) {
     for (let ie = 0; ie < refineEFSteps; ie++) {
         const efCandidate = efLow + (efHigh - efLow) * (ie / (refineEFSteps - 1));
         for (let ik = 0; ik < refineKSteps; ik++) {
-            const kT = Math.max(kTMin, Math.min(kTMax, best.kT + (ik - refineKSteps/2) * ( (kTMax-kTMin)/(kTSteps*2) )));
+            const kT = Math.max(kTMin, Math.min(kTMax, best.kT + (ik - refineKSteps / 2) * ((kTMax - kTMin) / (kTSteps * 2))));
             let sum_f = 0, sum_1 = N, sum_ff = 0, sum_f1 = 0, sum_fy = 0, sum_1y = 0;
             for (let i = 0; i < N; i++) {
                 const fi = 1.0 / (1.0 + Math.exp((E[i] - efCandidate) / kT));
@@ -805,4 +805,230 @@ export function fitFermiEdge2D(data, width, height, energyAxis, opts = {}) {
 
     if (!best || !isFinite(best.ef)) return { ef: initEF, status: 'failed' };
     return { ef: best.ef, status: 'success', fit: best };
+}
+
+/**
+ * Complementary Error Function (approximate)
+ * erfc(x) = 1 - erf(x)
+ * Uses Abramowitz and Stegun approximation (max error 1.5e-7)
+ */
+function erfc(x) {
+    // Save the sign of x
+    const sign = x >= 0 ? 1 : -1;
+    x = Math.abs(x);
+
+    // Constants
+    const a1 = 0.254829592;
+    const a2 = -0.284496736;
+    const a3 = 1.421413741;
+    const a4 = -1.453152027;
+    const a5 = 1.061405429;
+    const p = 0.3275911;
+
+    // A&S formula 7.1.26
+    const t = 1.0 / (1.0 + p * x);
+    const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+
+    // erf(x) = sign * y
+    // erfc(x) = 1 - erf(x)
+    return 1.0 - sign * y;
+}
+
+/**
+ * Enhanced fitFermiEdge2D with Gaussian Broadening support.
+ * Model: I(E) = A * 0.5 * erfc( (E - E_F) / (sqrt(2) * sigma_tot) ) + B
+ * Where sigma_tot = sqrt(sigma^2 + (pi*k_B*T/sqrt(3))^2)
+ */
+export function fitFermiEdgeGaussian(data, width, height, energyAxis, opts = {}) {
+    const smoothing = opts.smoothing || 1;
+    const window = opts.window || 0.1; // eV half-window for fitting range
+    // NOTE: user might pass a smaller window (e.g. 0.1) for tight fit around edge
+    const initialEF = opts.initialEF; // Must provide a starting guess
+    if (initialEF === undefined || initialEF === null) {
+        return { success: false, error: "Initial EF guess required" };
+    }
+
+    // Fixed T = 20K (approx 1.7 meV) or user provided
+    const T = opts.temperature || 20.0;
+    const kB = 8.617e-5;
+    const kT = kB * T;
+
+    // 1) Compute EDC and Normalized EDC in one pass
+    const edc = new Float32Array(height);
+
+    // Compute raw EDC
+    for (let i = 0; i < height; i++) {
+        let s = 0;
+        const row = i * width;
+        for (let j = 0; j < width; j++) s += data[row + j];
+        edc[i] = s;
+    }
+
+    // Smooth EDC if needed
+    const smooth = new Float32Array(height);
+    let minVal = Infinity, maxVal = -Infinity;
+
+    if (smoothing > 0) {
+        const half = Math.floor(smoothing);
+        for (let i = 0; i < height; i++) {
+            let s = 0, cnt = 0;
+            const start = Math.max(0, i - half);
+            const end = Math.min(height - 1, i + half);
+            for (let k = start; k <= end; k++) {
+                s += edc[k];
+                cnt++;
+            }
+            smooth[i] = s / cnt;
+            if (smooth[i] < minVal) minVal = smooth[i];
+            if (smooth[i] > maxVal) maxVal = smooth[i];
+        }
+    } else {
+        for (let i = 0; i < height; i++) {
+            smooth[i] = edc[i];
+            if (smooth[i] < minVal) minVal = smooth[i];
+            if (smooth[i] > maxVal) maxVal = smooth[i];
+        }
+    }
+
+    // Normalize
+    const normRange = (maxVal - minVal) > 1e-9 ? (maxVal - minVal) : 1;
+    const normEDC = new Float32Array(height);
+    for (let i = 0; i < height; i++) {
+        normEDC[i] = (smooth[i] - minVal) / normRange;
+    }
+
+    // 2) Select Data within Fitting Window
+    const eMin = initialEF - window;
+    const eMax = initialEF + window;
+    const X = [];
+    const Y = [];
+
+    for (let i = 0; i < height; i++) {
+        const e = energyAxis[i];
+        if (e >= eMin && e <= eMax) {
+            X.push(e);
+            Y.push(normEDC[i]);
+        }
+    }
+
+    if (X.length < 5) return { success: false, error: "Not enough points in window" };
+
+    // 3) Grid Search optimization
+    const efSteps = 40;
+    const sigmaSteps = 20;
+
+    // Search ranges
+    const searchEFMin = initialEF - window * 0.5;
+    const searchEFMax = initialEF + window * 0.5;
+    const sigmaMin = 0.001; // 1 meV
+    const sigmaMax = 0.1;   // 100 meV
+
+    let best = { rss: Infinity, ef: initialEF, sigma: 0.02, A: 1, B: 0 };
+    const N = X.length;
+
+    // Pre-calculate thermal width component squared
+    const thermalWidthSq = Math.pow(Math.PI * kT / Math.sqrt(3), 2);
+
+    for (let ie = 0; ie < efSteps; ie++) {
+        const efVal = searchEFMin + (ie / (efSteps - 1)) * (searchEFMax - searchEFMin);
+
+        for (let is = 0; is < sigmaSteps; is++) {
+            const sigmaVal = sigmaMin + (is / (sigmaSteps - 1)) * (sigmaMax - sigmaMin);
+
+            // Total width
+            const totalWidth = Math.sqrt(sigmaVal * sigmaVal + thermalWidthSq);
+            const sqrt2TotalWidth = Math.sqrt(2) * totalWidth;
+
+            // Build model vectors for linear least squares
+            let sum_f = 0, sum_ff = 0, sum_y = 0, sum_fy = 0;
+
+            for (let k = 0; k < N; k++) {
+                const arg = (X[k] - efVal) / sqrt2TotalWidth;
+                const f = 0.5 * erfc(arg);
+                const yVal = Y[k];
+
+                sum_f += f;
+                sum_ff += f * f;
+                sum_y += yVal;
+                sum_fy += f * yVal;
+            }
+
+            const det = sum_ff * N - sum_f * sum_f;
+            if (Math.abs(det) < 1e-12) continue; // Singular
+
+            const A = (sum_fy * N - sum_f * sum_y) / det;
+            const B = (sum_ff * sum_y - sum_f * sum_fy) / det;
+
+            // Calc RSS
+            let rss = 0;
+            for (let k = 0; k < N; k++) {
+                const arg = (X[k] - efVal) / sqrt2TotalWidth;
+                const f = 0.5 * erfc(arg);
+                const pred = A * f + B;
+                const resid = Y[k] - pred;
+                rss += resid * resid;
+            }
+
+            if (rss < best.rss) {
+                best = { rss, ef: efVal, sigma: sigmaVal, A, B };
+            }
+        }
+    }
+
+    // Refinement Step (Zoom in around best)
+    const refineSteps = 20;
+    const efRangeRefine = (searchEFMax - searchEFMin) / efSteps * 4;
+    const sigmaRangeRefine = (sigmaMax - sigmaMin) / sigmaSteps * 4;
+
+    const rEFMin = Math.max(eMin, best.ef - efRangeRefine);
+    const rEFMax = Math.min(eMax, best.ef + efRangeRefine);
+    const rSigmaMin = Math.max(sigmaMin, best.sigma - sigmaRangeRefine);
+    const rSigmaMax = Math.min(sigmaMax, best.sigma + sigmaRangeRefine);
+
+    for (let ie = 0; ie < refineSteps; ie++) {
+        const efVal = rEFMin + (ie / (refineSteps - 1)) * (rEFMax - rEFMin);
+        for (let is = 0; is < refineSteps; is++) {
+            const sigmaVal = rSigmaMin + (is / (refineSteps - 1)) * (rSigmaMax - rSigmaMin);
+
+            const totalWidth = Math.sqrt(sigmaVal * sigmaVal + thermalWidthSq);
+            const sqrt2TotalWidth = Math.sqrt(2) * totalWidth;
+
+            let sum_f = 0, sum_ff = 0, sum_y = 0, sum_fy = 0;
+            for (let k = 0; k < N; k++) {
+                const arg = (X[k] - efVal) / sqrt2TotalWidth;
+                const f = 0.5 * erfc(arg);
+                const yVal = Y[k];
+                sum_f += f;
+                sum_ff += f * f;
+                sum_y += yVal;
+                sum_fy += f * yVal;
+            }
+
+            const det = sum_ff * N - sum_f * sum_f;
+            if (Math.abs(det) < 1e-12) continue;
+
+            const A = (sum_fy * N - sum_f * sum_y) / det;
+            const B = (sum_ff * sum_y - sum_f * sum_fy) / det;
+
+            let rss = 0;
+            for (let k = 0; k < N; k++) {
+                const arg = (X[k] - efVal) / sqrt2TotalWidth;
+                const f = 0.5 * erfc(arg);
+                const pred = A * f + B;
+                const resid = Y[k] - pred;
+                rss += resid * resid;
+            }
+            if (rss < best.rss) {
+                best = { rss, ef: efVal, sigma: sigmaVal, A, B };
+            }
+        }
+    }
+
+    return {
+        success: true,
+        ef: best.ef,
+        sigma: best.sigma,
+        width: Math.sqrt(best.sigma * best.sigma + thermalWidthSq), // Total Gaussian width
+        rss: best.rss
+    };
 }

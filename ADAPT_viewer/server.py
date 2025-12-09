@@ -5,6 +5,8 @@ import numpy as np
 import shutil
 import atexit
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from pydantic import BaseModel
+from typing import Optional, List
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +44,39 @@ except ImportError as e:
         raise ImportError("Shared loaders not available")
     def load_ibw(path):
         raise ImportError("Shared loaders not available")
+
+    def load_ibw(path):
+        raise ImportError("Shared loaders not available")
+
+# Import Processing Modules with granular error handling
+align_error = None
+fermi_fit_error = None
+
+# 1. Align Module
+try:
+    from processing.align import align_axis, align_energy, align_energy_3d
+except ImportError as e:
+    align_error = str(e)
+    print(f"WARNING: Could not import alignment module: {e}")
+    def align_axis(*args, **kwargs): raise ImportError(f"Alignment not available: {align_error}")
+    def align_energy(*args, **kwargs): raise ImportError(f"Alignment not available: {align_error}")
+    def align_energy_3d(*args, **kwargs): raise ImportError(f"Alignment not available: {align_error}")
+
+# 2. Fermi Edge Fit Module
+try:
+    from processing.fermi_edge_fit import fit_fermi_edge, fit_fermi_edge_3d
+except ImportError as e:
+    fermi_fit_error = str(e)
+    print(f"WARNING: Could not import fermi fit module: {e}")
+    def fit_fermi_edge(*args, **kwargs): raise ImportError(f"Fermi fit not available: {fermi_fit_error}")
+    def fit_fermi_edge_3d(*args, **kwargs): raise ImportError(f"Fermi fit not available: {fermi_fit_error}")
+
+# 3. Angle to K Module
+try:
+    from processing.angle_to_k import convert_angle_to_k
+except ImportError as e:
+    print(f"WARNING: Could not import angle_to_k module: {e}")
+    def convert_angle_to_k(*args, **kwargs): raise ImportError(f"Angle to K conversion not available: {e}")
 
 app = FastAPI(title="ARPES Visualization Tool")
 
@@ -231,6 +266,14 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
             if 'tilt' in axes and 'ky' not in normalized_axes and 'ky' not in axes:
                 normalized_axes['ky'] = axes['tilt']
 
+            # Map 'k' to 'kx' (common output from conversion)
+            if 'k' in axes and 'kx' not in axes and 'kx' not in normalized_axes:
+                normalized_axes['kx'] = axes['k']
+
+            # Map 'kz' to 'ky' (for kx-kz converted data)
+            if 'kz' in axes and 'ky' not in axes and 'ky' not in normalized_axes:
+                normalized_axes['ky'] = axes['kz']
+
             # Merge normalized keys into axes (without overwriting existing keys)
             for k, v in normalized_axes.items():
                 if k not in axes:
@@ -275,12 +318,29 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
                 "ndim": data.ndim
             }
 
-            return {
+            # Determine units based on conversion
+            kx_unit = None
+            ky_unit = None
+            if metadata.get('conversion') in ['angle_to_k', 'angle_hv_to_kxkz', 'angle_to_k_kz', 'kx_ky']:
+                 kx_unit = "1/Å"
+                 if data.ndim == 3:
+                     ky_unit = "1/Å"
+            
+            # Use '1/Å' if kx is explicitly in axes (fallback)
+            if 'kx' in axes and ('angle' not in axes and 'theta' not in axes):
+                # If we only have kx and no angle, assume it's k-space (weak heuristic)
+                pass
+
+            resp = {
                 "filename": path,
                 "metadata": metadata,
                 "axes": axes,
                 "data_info": data_info
             }
+            if kx_unit: resp['kx_unit'] = kx_unit
+            if ky_unit: resp['ky_unit'] = ky_unit
+            
+            return resp
         else:
             # Backwards compatibility: handle dict result (legacy)
             metadata = result.get("metadata", {})
@@ -403,6 +463,334 @@ async def upload_file(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Processing Endpoints
+# =============================================================================
+
+class AlignRequest(BaseModel):
+    path: str
+    axis: str
+    offset: float
+    scan_axis: Optional[str] = "scan"
+    scan_offset: Optional[float] = None
+    method: str = "manual"
+    hv_mapping_enabled: bool = False
+    fit_range: Optional[float] = None
+
+class FitFermiRequest(BaseModel):
+    path: str
+    energy_window: List[float]
+    theta_range: Optional[List[float]] = None
+
+class ConvertKRequest(BaseModel):
+    path: str
+    hv: Optional[float] = None
+    work_function: float = 4.5
+    inner_potential: float = 10.0
+    hv_mapping_enabled: bool = False
+    is_hv_scan: bool = False # Optional, for explicit scan type override
+    hv_dim: Optional[str] = None
+    convert_hv_to_kz: bool = False
+
+@app.post("/api/process/align")
+async def align_data(request: AlignRequest):
+    """Align data along an axis and return path to new file."""
+    file_path = request.path
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(DATA_DIR, file_path)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    try:
+        # Load data
+        # Use simple loader for speed if possible, but we need xarray
+        # Re-use load_metadata logic implicitly by using shared loaders directly
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.h5' or ext == '.nxs' or ext == '.hdf5':
+            data = load_hdf5_data(file_path)
+        elif ext == '.ibw':
+            data = load_ibw(file_path)
+        elif ext == '.zip':
+             data = load_ses_zip(file_path)
+        else:
+             raise HTTPException(status_code=400, detail="Unsupported file type for processing")
+
+        if not isinstance(data, xr.DataArray):
+             raise HTTPException(status_code=400, detail="Data must be xarray for alignment")
+             
+        # Perform alignment
+        if request.axis == 'energy' or request.axis == 'Eb':
+            # Check for 3D HV Mapping Case
+            # Conditions: 3D data AND hv_mapping_enabled is True
+            if data.ndim == 3 and request.hv_mapping_enabled:
+                 if request.fit_range is None:
+                     raise HTTPException(status_code=400, detail="fit_range is required for 3D HV mapping alignment")
+                 
+                 print(f"Performing 3D Fermi Surface Alignment (HV Mapping Enabled)")
+                 
+                 # 1. Fit Fermi Edge for each slice
+                 # energy_window = (ef textbox - range, ef textbox + range)
+                 # Here request.offset corresponds to the 'ef textbox' value passed from frontend
+                 e_min = request.offset - request.fit_range
+                 e_max = request.offset + request.fit_range
+                 energy_window = (e_min, e_max)
+                 
+                 # We need to identify the scan dimension. 
+                 # Usually it is the last dimension or named 'scan', 'ky', etc.
+                 # Let's try to detect it or use a default.
+                 # data.dims usually looks like ('energy', 'angle', 'scan') or similar.
+                 scan_dim = 'scan'
+                 if 'ky' in data.dims: scan_dim = 'ky'
+                 
+                 # Call fit_fermi_edge_3d
+                 # Note: fit_fermi_edge_3d is imported from processing.fermi_edge_fit
+                 fit_results = fit_fermi_edge_3d(
+                     data, 
+                     energy_window=energy_window, 
+                     scan_dim=scan_dim,
+                     show_progress=False
+                 )
+                 
+                 E_F_array = fit_results['E_F']
+                 
+                 # 2. Align Energy 3D
+                 aligned = align_energy_3d(
+                     data, 
+                     E_F_array=E_F_array, 
+                     scan_dim=scan_dim,
+                     energy_axis=request.axis
+                 )
+                 
+                 # Update metadata to reflect 3D alignment
+                 aligned.attrs['alignment_method'] = f"3D_HV_Mapping_Fit (Center={request.offset}, Range={request.fit_range})"
+
+            else:
+                # Standard 2D alignment or 3D alignment with constant shift
+                # Use align_energy for energy axis
+                aligned = align_energy(data, E_F=request.offset, energy_axis=request.axis)
+        else:
+            # Handle Axis (Angle/Theta) Alignment
+            
+            # Resolve axis alias
+            target_axis = request.axis
+            # Heuristic: if requested 'angle' or 'theta' but data has 'kx', use 'kx'
+            if target_axis not in data.coords:
+                if target_axis in ['angle', 'theta'] and 'kx' in data.coords:
+                    target_axis = 'kx'
+                elif target_axis in ['angle', 'kx'] and 'theta' in data.coords:
+                    target_axis = 'theta'
+                elif target_axis in ['kx', 'theta'] and 'angle' in data.coords:
+                    target_axis = 'angle'
+            
+            # 1. Align Primary Axis (e.g. Theta/kx)
+            aligned = align_axis(data, axis_name=target_axis, offset=request.offset, method=request.method)
+            
+            # 2. Check for 3D logic (Composite Alignment)
+            if aligned.ndim == 3:
+                # Check 3D status
+                # If HV Mapping is Convert (Enabled): Align Theta ONLY. (Done above)
+                # If HV Mapping is Fermi Surf (Disabled): Align Theta AND Scan (if scan provided).
+                
+                if not request.hv_mapping_enabled:
+                    # Case: Fermi Surface Mapping -> Align BOTH Theta and Scan
+                    if request.scan_offset is not None and request.scan_offset != 0:
+                         # Resolve scan axis
+                         scan_axis = request.scan_axis
+                         if scan_axis not in aligned.coords:
+                             # Default heuristics
+                             if 'ky' in aligned.coords: scan_axis = 'ky'
+                             elif 'scan' in aligned.coords: scan_axis = 'scan'
+                             elif 'tilt' in aligned.coords: scan_axis = 'tilt'
+                         
+                         if scan_axis in aligned.coords:
+                             print(f"Applying composite alignment: Adding Scan/Ky shift by {request.scan_offset}")
+                             aligned = align_axis(
+                                 aligned, 
+                                 axis_name=scan_axis, 
+                                 offset=request.scan_offset, 
+                                 method=f"{request.method}_plus_scan"
+                             )
+                         else:
+                             print(f"Warning: Scan axis '{scan_axis}' not found for composite alignment")
+                
+                # If hv_mapping_enabled is True, we ONLY aligned theta/kx above, which is correct.
+            
+        # Add processed flag
+        aligned.attrs['is_adapt_processed'] = True
+
+        # Save to new temp file
+        import h5py
+        # Always save as .h5 because we write HDF5/NetCDF format
+        suffix = ".h5"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="aligned_") as tmp:
+            save_path = tmp.name
+            TEMP_FILES.append(save_path)
+        
+        # Save using xarray to netcdf/h5 if possible, or custom saver
+        # Since we use h5py loaders usually, let's try to save as h5 using a simple saver or xarray's to_netcdf
+        # For compatibility with our loader, xarray to_netcdf (h5) is best if h5netcdf is installed.
+        # Otherwise, we might need a simple save function. 
+        # For now, let's assume we can save to netcdf/h5 which is standard for xarray.
+        try:
+            # Drop complex attributes that fail serialization
+            # simplified_attrs = {k: str(v) for k, v in aligned.attrs.items()}
+            # aligned.attrs = simplified_attrs
+            aligned.to_netcdf(save_path, engine='h5netcdf')
+        except Exception as e:
+            # Fallback: if h5netcdf fails, try scipy or just pickle? No, pickle is bad for interop.
+            # Let's try native h5py if available, or just fail for now.
+            # Actually, standard ARPES data in this project seems to be HDF5. 
+            print(f"Warning: standard save failed {e}, using h5py fallback")
+            with h5py.File(save_path, 'w') as f:
+                ds = f.create_dataset('data', data=aligned.values)
+                # Save coords
+                for coord in aligned.coords:
+                    f.create_dataset(coord, data=aligned.coords[coord].values)
+                # Save attrs
+                for k, v in aligned.attrs.items():
+                    try:
+                        f.attrs[k] = v
+                    except:
+                        f.attrs[k] = str(v)
+                        
+        return {"filename": save_path}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/process/fit_fermi_edge")
+async def fit_fermi_edge_endpoint(request: FitFermiRequest):
+    """Fit Fermi edge and return parameters."""
+    file_path = request.path
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(DATA_DIR, file_path)
+        
+    try:
+        # Load
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.h5' or ext == '.nxs':
+            data = load_hdf5_data(file_path)
+        elif ext == '.ibw':
+            data = load_ibw(file_path)
+        else:
+             raise HTTPException(status_code=400, detail="Unsupported file type")
+             
+        if not isinstance(data, xr.DataArray):
+             raise HTTPException(status_code=400, detail="Data must be xarray")
+             
+        # Determine axes names
+        # Simple heuristic or check coords
+        energy_dim = 'energy'
+        if 'Eb' in data.dims: energy_dim = 'Eb'
+        
+        angle_dim = 'angle'
+        if 'theta' in data.dims: angle_dim = 'theta'
+        elif 'kx' in data.dims: angle_dim = 'kx'
+        
+        results = fit_fermi_edge(
+            data, 
+            energy_window=tuple(request.energy_window),
+            theta_range=tuple(request.theta_range) if request.theta_range else None,
+            energy_dim=energy_dim,
+            angle_dim=angle_dim
+        )
+        
+        # Convert numpy types to native for JSON
+        clean_results = {}
+        for k, v in results.items():
+            if isinstance(v, (np.float32, np.float64)):
+                clean_results[k] = float(v)
+            elif k in ['success', 'error']:
+                clean_results[k] = v
+                
+        return clean_results
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/process/convert_k")
+async def convert_k(request: ConvertKRequest):
+    """Convert data to k-space."""
+    file_path = request.path
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(DATA_DIR, file_path)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        # Load data
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.h5' or ext == '.nxs' or ext == '.hdf5':
+            data = load_hdf5_data(file_path)
+        elif ext == '.ibw':
+            data = load_ibw(file_path)
+        elif ext == '.zip':
+             data = load_ses_zip(file_path)
+        else:
+             raise HTTPException(status_code=400, detail="Unsupported file type for processing")
+
+        if not isinstance(data, xr.DataArray):
+             raise HTTPException(status_code=400, detail="Data must be xarray for conversion")
+
+        print(f"Converting to k-space. HV={request.hv}, V0={request.inner_potential}, Phi={request.work_function}")
+        print(f"Data ndim={data.ndim}, HV Mapping Enabled={request.hv_mapping_enabled}")
+
+        # Call conversion logic
+        # Logic:
+        # 2D -> angle_to_k(data, hv=hv)
+        # 3D (HV Mapping Disabled) -> angle_to_k(data, hv=hv) to treat as kx-ky mapping
+        # 3D (HV Mapping Enabled) -> This implies variable hv. 
+        #    If user passed explicit 'hv', it overrides? 
+        #    Standard logic for hv mapping usually reads hv from coords.
+        #    However, the request logic here specifically asks to handle 2D and 3D (disabled) with explicit HV.
+        
+        # We pass request.hv. If it's physically relevant (e.g. constant hv slice), it will be used.
+        converted = convert_angle_to_k(
+            data, 
+            hv=request.hv, 
+            phi=request.work_function, 
+            V0=request.inner_potential,
+            is_hv_scan=request.hv_mapping_enabled or request.is_hv_scan, 
+            hv_dim=request.hv_dim if request.hv_dim else 'scan',
+            convert_hv_to_kz=request.convert_hv_to_kz
+        )
+        
+        # Add processed flag
+        converted.attrs['is_adapt_processed'] = True
+
+        # Save to new temp file
+        import h5py
+        suffix = ".h5"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="k_converted_") as tmp:
+            save_path = tmp.name
+            TEMP_FILES.append(save_path)
+        
+        try:
+            converted.to_netcdf(save_path, engine='h5netcdf')
+        except Exception as e:
+            print(f"Warning: standard save failed {e}, using h5py fallback")
+            with h5py.File(save_path, 'w') as f:
+                ds = f.create_dataset('data', data=converted.values)
+                for coord in converted.coords:
+                    f.create_dataset(coord, data=converted.coords[coord].values)
+                for k, v in converted.attrs.items():
+                    try:
+                        f.attrs[k] = v
+                    except:
+                        f.attrs[k] = str(v)
+                        
+        return {"filename": save_path}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # Mount static files

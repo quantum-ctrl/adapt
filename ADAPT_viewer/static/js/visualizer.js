@@ -118,6 +118,68 @@ export class Visualizer {
         return result;
     }
 
+    /**
+     * Set cursor position (slice indices) from physical coordinates.
+     * @param {Object} coords - { x: theta/kx, y: energy/ef, z: scan/ky }
+     */
+    setCursor(coords) {
+        if (!this.data || !this.axes) return;
+
+        const findClosestIndex = (arr, val) => {
+            if (!arr || arr.length === 0) return 0;
+            let closestIdx = 0;
+            let minDiff = Infinity;
+            for (let i = 0; i < arr.length; i++) {
+                const diff = Math.abs(arr[i] - val);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIdx = i;
+                }
+            }
+            return closestIdx;
+        };
+
+        const newIndices = [...this.sliceIndices];
+        let changed = false;
+
+        // 2D: x=Angle(kx), y=Energy
+        // 3D: x=Angle, y=Energy, z=Scan
+        // Note: sliceIndices for 2D is [energy_idx, angle_idx, 0]
+        // Note: sliceIndices for 3D is [energy_idx, angle_idx, scan_idx]
+
+        if (coords.y !== undefined && this.axes.energy) {
+            const idx = findClosestIndex(this.axes.energy, coords.y);
+            if (idx !== newIndices[0]) {
+                newIndices[0] = idx;
+                changed = true;
+            }
+        }
+
+        if (coords.x !== undefined && this.axes.kx) {
+            const idx = findClosestIndex(this.axes.kx, coords.x);
+            if (idx !== newIndices[1]) {
+                newIndices[1] = idx;
+                changed = true;
+            }
+        }
+
+        if (this.ndim === 3 && coords.z !== undefined && this.axes.ky) {
+            const idx = findClosestIndex(this.axes.ky, coords.z);
+            if (idx !== newIndices[2]) {
+                newIndices[2] = idx;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.sliceIndices = newIndices;
+            this.draw();
+            // We do NOT dispatch 'cursor-update' here to avoid circular loop with UI inputs
+            // unless we strictly distinguish source. For now, let's assume UI update -> setCursor
+            // shouldn't trigger UI update again.
+        }
+    }
+
     setData(data, metadata) {
         this.data = data;
         this.metadata = metadata;
@@ -1290,10 +1352,80 @@ export class Visualizer {
     }
 
     autoContrast() {
-        // Simple auto: 2nd to 98th percentile?
-        // Or just reset to 0-100 for now as the sliders are percentiles of the range.
-        this.contrastMin = 0;
-        this.contrastMax = 100;
+        if (!this.data || !this.metadata) return;
+
+        const globalMin = this.metadata.data_info.min;
+        const globalMax = this.metadata.data_info.max;
+        const range = globalMax - globalMin;
+
+        if (range <= 0) {
+            this.contrastMin = 0;
+            this.contrastMax = 100;
+            this.draw();
+            return;
+        }
+
+        // Percentile based auto-contrast (histogram approach)
+        // We use a simplified histogram with 1000 bins to find ~2nd and ~98th percentiles.
+        const numBins = 1000;
+        const histogram = new Uint32Array(numBins);
+        const data = this.data;
+        const len = data.length;
+
+        // Sample data for speed if dataset is huge (>1M points)
+        // Stride = 1 if len < 1M, else skip appropriately
+        const stride = len > 1000000 ? Math.floor(len / 1000000) : 1;
+
+        let sampleCount = 0;
+        for (let i = 0; i < len; i += stride) {
+            const val = data[i];
+            // Normalize to 0-1 relative to global range
+            let t = (val - globalMin) / range;
+            if (t < 0) t = 0;
+            if (t >= 1) t = 0.9999; // Ensure it fits in the last bin
+
+            const bin = Math.floor(t * numBins);
+            histogram[bin]++;
+            sampleCount++;
+        }
+
+        // Find lower cut (2nd percentile)
+        const lowCutThreshold = sampleCount * 0.02;
+        let count = 0;
+        let lowCutBin = 0;
+        for (let i = 0; i < numBins; i++) {
+            count += histogram[i];
+            if (count > lowCutThreshold) {
+                lowCutBin = i;
+                break;
+            }
+        }
+
+        // Find upper cut (98th percentile)
+        const highCutThreshold = sampleCount * 0.98;
+        count = 0;
+        let highCutBin = numBins - 1;
+        for (let i = 0; i < numBins; i++) {
+            count += histogram[i];
+            if (count > highCutThreshold) {
+                highCutBin = i;
+                break;
+            }
+        }
+
+        // Convert bin indices back to percent range strings (0-100)
+        // lowCutBin / numBins is 0-1 float.
+        this.contrastMin = (lowCutBin / numBins) * 100;
+        this.contrastMax = (highCutBin / numBins) * 100;
+
+        // Safety check to ensure they don't cross or get stuck
+        if (this.contrastMax <= this.contrastMin) {
+            this.contrastMin = 0;
+            this.contrastMax = 100;
+        }
+
+        if (DEBUG) console.log(`Auto Contrast: Min=${this.contrastMin.toFixed(2)}%, Max=${this.contrastMax.toFixed(2)}%`);
+
         this.draw();
     }
 

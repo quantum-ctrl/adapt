@@ -38,48 +38,55 @@
 
             <!-- Section 2: Colormap & Contrast -->
             <div class="control-group">
-                <div class="control-group-title">Colormap</div>
-                <div class="label-row">
-                    <select id="colormap-select" style="flex: 1;">
-                        <option value="viridis">Viridis</option>
-                        <option value="plasma">Plasma</option>
-                        <option value="inferno">Inferno</option>
-                        <option value="magma">Magma</option>
-                        <option value="cividis">Cividis</option>
-                        <option value="hot">Hot</option>
-                        <option value="cool">Cool</option>
-                        <option value="bone">Bone</option>
-                        <option value="seismic">Seismic</option>
-                        <option value="gray">Grayscale</option>
-                    </select>
-                    <div class="checkbox-row" style="margin: 0; margin-left: 8px;">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="invert-colormap-check">
-                            <span class="slider round"></span>
-                        </label>
-                        <span class="toggle-label">Inv</span>
-                    </div>
+                <div class="control-group-title"
+                    style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"
+                    id="colormap-toggle-header">
+                    <span>Colormap</span>
+                    <span id="colormap-header-icon" class="rotate-icon">▼</span>
                 </div>
-
-                <div class="slider-group">
-                    <div class="input-row">
-                        <label>Min</label>
-                        <span id="cmin-val">0</span>
-                        <label style="margin-left: auto; margin-right: 10px;">Max</label>
-                        <span id="cmax-val">100</span>
+                <div id="colormap-controls" style="margin-top: 10px;">
+                    <div class="label-row">
+                        <select id="colormap-select" style="flex: 1;">
+                            <option value="viridis">Viridis</option>
+                            <option value="plasma">Plasma</option>
+                            <option value="inferno">Inferno</option>
+                            <option value="magma">Magma</option>
+                            <option value="cividis">Cividis</option>
+                            <option value="hot">Hot</option>
+                            <option value="cool">Cool</option>
+                            <option value="bone">Bone</option>
+                            <option value="seismic">Seismic</option>
+                            <option value="gray">Grayscale</option>
+                        </select>
+                        <div class="checkbox-row" style="margin: 0; margin-left: 8px;">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="invert-colormap-check">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="toggle-label">Inv</span>
+                        </div>
                     </div>
-                    <div class="range-slider-container">
-                        <div class="range-slider-track"></div>
-                        <input type="range" id="cmin-slider" min="0" max="100" value="0"
-                            class="range-slider-input range-min">
-                        <input type="range" id="cmax-slider" min="0" max="100" value="100"
-                            class="range-slider-input range-max">
-                    </div>
-                </div>
 
-                <div class="button-row">
-                    <button id="auto-contrast-btn" class="secondary-btn">Auto</button>
-                    <button id="reset-contrast-btn" class="secondary-btn">Reset</button>
+                    <div class="slider-group">
+                        <div class="input-row" style="display: none;">
+                            <label>Min</label>
+                            <span id="cmin-val">0</span>
+                            <label style="margin-left: auto; margin-right: 10px;">Max</label>
+                            <span id="cmax-val">100</span>
+                        </div>
+                        <div class="range-slider-container">
+                            <div class="range-slider-track"></div>
+                            <input type="range" id="cmin-slider" min="0" max="100" value="0"
+                                class="range-slider-input range-min">
+                            <input type="range" id="cmax-slider" min="0" max="100" value="100"
+                                class="range-slider-input range-max">
+                        </div>
+                    </div>
+
+                    <div class="button-row">
+                        <button id="auto-contrast-btn" class="secondary-btn">Auto</button>
+                        <button id="reset-contrast-btn" class="secondary-btn">Reset</button>
+                    </div>
                 </div>
             </div>
 
@@ -89,16 +96,13 @@
                     style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"
                     id="enhance-toggle-header">
                     <span>Enhancement</span>
-                    <span id="enhance-header-icon" class="rotate-icon">▼</span>
+                    <span id="enhance-header-icon" class="">▼</span>
                 </div>
-                <div id="enhance-controls" style="margin-top: 10px;">
-                    <div class="checkbox-row">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="enhance-enable-check" checked>
-                            <span class="slider round"></span>
-                        </label>
-                        <span class="toggle-label">Enable</span>
-                    </div>
+                <div id="enhance-controls" style="margin-top: 10px; display: none;">
+
+                    <!-- Normalization Button -->
+                    <button id="normalization-btn" class="secondary-btn"
+                        style="width: 100%; margin-bottom: 10px; display: none;">Normalization</button>
 
                     <!-- CLAHE -->
                     <div class="checkbox-row" style="margin-top: 10px;">
@@ -139,36 +143,63 @@
                 </div>
             </div>
 
+
+
             <!-- Section 4: Parameters (hv, EF, theta) -->
-            <div class="control-group" id="parameters-controls">
-                <div class="control-group-title">Parameters</div>
-                <div class="input-row">
-                    <label>hv (eV)</label>
-                    <input type="number" id="hv-input" value="21.2" step="0.1" style="width: 80px;">
+            <!-- Section 4: Parameters (hv, EF, theta) -->
+            <div class="control-group">
+                <div class="control-group-title"
+                    style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"
+                    id="parameters-toggle-header">
+                    <span>Parameters</span>
+                    <span id="parameters-header-icon" class="rotate-icon">▼</span>
                 </div>
-                <div class="input-row">
-                    <label>EF (eV)</label>
-                    <input type="number" id="ef-input" value="0" step="0.01" style="width: 80px;">
+                <div id="parameters-controls" style="margin-top: 10px;">
+                    <div class="input-row">
+                        <label>hv (eV)</label>
+                        <input type="number" id="hv-input" value="21.2" step="0.1" style="width: 80px;">
+                    </div>
+                    <div class="input-row">
+                        <label>EF (eV)</label>
+                        <input type="number" id="ef-input" value="0" step="0.01" style="width: 80px;">
+                    </div>
+                    <div class="input-row" id="ef-fit-range-row" style="display: none;">
+                        <label>EF Fit Range</label>
+                        <input type="number" id="ef-fit-range-input" value="0.5" step="0.1" style="width: 80px;">
+                    </div>
+                    <div class="input-row">
+                        <label>θ (deg)</label>
+                        <input type="number" id="theta-input" value="0" step="0.1" style="width: 80px;">
+                    </div>
+                    <div class="input-row" id="scan-input-row" style="display: none;">
+                        <label>Scan</label>
+                        <input type="number" id="scan-input" value="0" step="1" style="width: 80px;">
+                    </div>
+
                 </div>
-                <div class="input-row">
-                    <label>θ (deg)</label>
-                    <input type="number" id="theta-input" value="0" step="0.1" style="width: 80px;">
-                </div>
-                <div class="input-row" id="scan-input-row" style="display: none;">
-                    <label>Scan</label>
-                    <input type="number" id="scan-input" value="0" step="1" style="width: 80px;">
-                </div>
-                <button id="get-from-cursor-btn" class="secondary-btn" style="width: 100%; margin-top: 5px;">
-                    Get from Cursor
-                </button>
             </div>
 
             <!-- Section 5: Alignment -->
             <div class="control-group" id="alignment-controls">
                 <div class="control-group-title">Alignment</div>
-                <div style="display: flex; gap: 5px;">
+                <div style="display: flex; gap: 5px; margin-bottom: 10px;">
                     <button id="align-energy-btn" class="secondary-btn" style="flex: 1;">Align Energy</button>
                     <button id="align-theta-btn" class="secondary-btn" style="flex: 1;">Align Theta</button>
+                </div>
+
+                <!-- HV Mapping Controls Moved Here -->
+                <div id="hv-mapping-mode">
+                    <div class="checkbox-row">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="hv-mapping-enable-check">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">Enable HV Mapping</span>
+                    </div>
+
+                    <div id="hv-mapping-conditional-content" style="display: none;">
+                        <!-- Content moved to other sections -->
+                    </div>
                 </div>
             </div>
 
@@ -176,6 +207,12 @@
             <div class="control-group" id="convert-controls">
                 <div class="control-group-title">Convert</div>
                 <button id="angle-to-k-btn" class="primary-btn" style="width: 100%;">Convert to k</button>
+                <button id="convert-kxkz-btn" class="secondary-btn"
+                    style="width: 100%; margin-top: 5px; display: none;">Convert to
+                    kxkz</button>
+                <button id="convert-kxhv-btn" class="secondary-btn"
+                    style="width: 100%; margin-top: 5px; display: none;">Convert to
+                    kxhv</button>
                 <!-- Hidden elements for compatibility -->
                 <input type="hidden" id="work-func-input" value="4.5">
                 <input type="hidden" id="inner-pot-input" value="10.0">

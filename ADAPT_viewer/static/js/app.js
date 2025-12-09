@@ -81,7 +81,26 @@ class App {
 
             // Alignment controls
             alignEnergyBtn: document.getElementById('align-energy-btn'),
-            alignThetaBtn: document.getElementById('align-theta-btn')
+            alignThetaBtn: document.getElementById('align-theta-btn'),
+
+            // hv Mapping controls
+            hvMappingToggleHeader: document.getElementById('hv-mapping-toggle-header'),
+            hvMappingControls: document.getElementById('hv-mapping-mode'),
+            hvMappingHeaderIcon: document.getElementById('hv-mapping-header-icon'),
+            hvMappingEnableCheck: document.getElementById('hv-mapping-enable-check'),
+            efFitRangeInput: document.getElementById('ef-fit-range-input'),
+            normalizationBtn: document.getElementById('normalization-btn'),
+            convertKxKzBtn: document.getElementById('convert-kxkz-btn'),
+            convertKxHvBtn: document.getElementById('convert-kxhv-btn'),
+            hvMappingConditionalContent: document.getElementById('hv-mapping-conditional-content'),
+
+            // New Toggles
+            colormapToggleHeader: document.getElementById('colormap-toggle-header'),
+            colormapControls: document.getElementById('colormap-controls'),
+            colormapHeaderIcon: document.getElementById('colormap-header-icon'),
+            parametersToggleHeader: document.getElementById('parameters-toggle-header'),
+            parametersControls: document.getElementById('parameters-controls'),
+            parametersHeaderIcon: document.getElementById('parameters-header-icon')
         };
 
         this.init();
@@ -109,13 +128,15 @@ class App {
         this.setControlsDisabled(false);
         console.log("Enhancement controls initialized:", this.ui.smoothSlider);
 
-        // CRITICAL FIX: Sync initial enhancement state from HTML to Visualizer
-        // The checkbox is checked by default in HTML, but Visualizer starts with enabled:false
-        // We need to call updateEnhancement once to sync the state
+        // Sync initial enhancement state
         setTimeout(() => {
-            if (this.ui.enhanceEnableCheck && this.ui.enhanceEnableCheck.checked) {
-                // Trigger the change event to sync state
-                this.ui.enhanceEnableCheck.dispatchEvent(new Event('change'));
+            updateEnhancement();
+        }, 100);
+
+        // Sync HV Mapping state
+        setTimeout(() => {
+            if (this.ui.hvMappingEnableCheck && this.ui.hvMappingEnableCheck.checked) {
+                this.ui.hvMappingEnableCheck.dispatchEvent(new Event('change'));
             }
         }, 100);
 
@@ -282,12 +303,196 @@ class App {
         this.ui.setAngleZeroBtn.addEventListener('click', () => this.setAngleZero());
         this.ui.setFermiBtn.addEventListener('click', () => this.setFermiLevel());
 
-        document.getElementById('angle-to-k-btn').addEventListener('click', () => {
-            // Set X-axis to k
-            this.ui.xAxisType.value = 'k';
-            // Trigger recalculation
-            this.recalculateData();
+        document.getElementById('angle-to-k-btn').addEventListener('click', async () => {
+            // Check if hv is provided
+            const hvInput = document.getElementById('hv-input');
+            const hv = parseFloat(hvInput.value);
+            if (isNaN(hv) || hv <= 0) {
+                alert("Please provide a valid Photon Energy (hv) for conversion.");
+                return;
+            }
+
+            const btn = document.getElementById('angle-to-k-btn');
+            btn.disabled = true;
+            btn.textContent = "Converting...";
+            const restoreBtn = () => {
+                btn.disabled = false;
+                btn.textContent = "Convert to k";
+            };
+
+            try {
+                const workFunc = parseFloat(this.ui.workFuncInput.value) || 4.5;
+                const innerPot = parseFloat(this.ui.innerPotInput.value) || 12.57;
+
+                // Check simple HV mapping check
+                // For proper logic, we might need to check if it's 3D and mapping is enabled
+                const hvMappingCheck = document.getElementById('hv-mapping-enable-check');
+                const isHvMappingEnabled = hvMappingCheck ? hvMappingCheck.checked : false;
+
+                console.log(`Converting to k-space... HV=${hv}, HV Mapping=${isHvMappingEnabled}`);
+
+                const res = await fetch('/api/process/convert_k', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path: this.selectedFilePath,
+                        hv: hv,
+                        work_function: workFunc,
+                        inner_potential: innerPot,
+                        hv_mapping_enabled: isHvMappingEnabled
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Conversion failed");
+                }
+
+                const data = await res.json();
+                console.log("Conversion complete, reloading:", data.filename);
+
+                // Update file path and load
+                this.selectedFilePath = data.filename;
+                await this.loadSelectedFile();
+
+                // Set relevant UI state
+                this.ui.xAxisType.value = 'k';
+                if (this.ui.dataInfo) {
+                    this.ui.dataInfo.textContent += " (Converted to k-space)";
+                }
+
+            } catch (e) {
+                console.error("Conversion Error:", e);
+                alert("Conversion Error: " + e.message);
+            } finally {
+                restoreBtn();
+            }
         });
+
+        // Convert Angle to KX-HV (HV Scan) button
+        const convertKxHvBtn = document.getElementById('convert-kxhv-btn');
+        if (convertKxHvBtn) {
+            convertKxHvBtn.addEventListener('click', async () => {
+                const btn = convertKxHvBtn;
+                btn.disabled = true;
+                btn.textContent = "Converting...";
+                const restoreBtn = () => {
+                    btn.disabled = false;
+                    btn.textContent = "Convert to kx-hv";
+                };
+
+                try {
+                    const workFunc = parseFloat(this.ui.workFuncInput.value) || 4.5;
+                    const innerPot = parseFloat(this.ui.innerPotInput.value) || 12.57;
+
+                    // For kx-hv, we treat it as an hv scan where 'scan' axis is hv
+                    // We don't need a single fixed hv value
+
+                    console.log(`Converting to kx-hv... V0=${innerPot}, Phi=${workFunc}`);
+
+                    const res = await fetch('/api/process/convert_k', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            path: this.selectedFilePath,
+                            hv: null, // Not needed for hv scan
+                            work_function: workFunc,
+                            inner_potential: innerPot,
+                            hv_mapping_enabled: true,
+                            is_hv_scan: true,
+                            hv_dim: 'scan',
+                            convert_hv_to_kz: false
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Conversion failed");
+                    }
+
+                    const data = await res.json();
+                    console.log("Conversion complete, reloading:", data.filename);
+
+                    // Update file path and load
+                    this.selectedFilePath = data.filename;
+                    await this.loadSelectedFile();
+
+                    // Set relevant UI state
+                    this.ui.xAxisType.value = 'k'; // or kx
+                    if (this.ui.dataInfo) {
+                        this.ui.dataInfo.textContent += " (Converted to kx-hv)";
+                    }
+
+                } catch (e) {
+                    console.error("Conversion Error:", e);
+                    alert("Conversion Error: " + e.message);
+                } finally {
+                    restoreBtn();
+                }
+            });
+        }
+
+        // Convert Angle to KX-KZ (HV Scan -> Kz) button
+        const convertKxKzBtn = document.getElementById('convert-kxkz-btn');
+        if (convertKxKzBtn) {
+            convertKxKzBtn.addEventListener('click', async () => {
+                const btn = convertKxKzBtn;
+                btn.disabled = true;
+                btn.textContent = "Converting...";
+                const restoreBtn = () => {
+                    btn.disabled = false;
+                    btn.textContent = "Convert to kx-kz";
+                };
+
+                try {
+                    const workFunc = parseFloat(this.ui.workFuncInput.value) || 4.5;
+                    const innerPot = parseFloat(this.ui.innerPotInput.value) || 12.57;
+
+                    console.log(`Converting to kx-kz... V0=${innerPot}, Phi=${workFunc}`);
+
+                    const res = await fetch('/api/process/convert_k', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            path: this.selectedFilePath,
+                            hv: null,
+                            work_function: workFunc,
+                            inner_potential: innerPot,
+                            hv_mapping_enabled: true,
+                            is_hv_scan: true,
+                            hv_dim: 'scan',
+                            convert_hv_to_kz: true
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Conversion failed");
+                    }
+
+                    const data = await res.json();
+                    console.log("Conversion complete, reloading:", data.filename);
+
+                    this.selectedFilePath = data.filename;
+                    await this.loadSelectedFile();
+
+                    this.ui.xAxisType.value = 'k';
+                    if (this.ui.zAxisType) this.ui.zAxisType.value = 'k'; // kz usually maps to 'scan' dim, but we might want to call it k?
+                    // Actually, convert_angle_to_k for kz usually names the axis 'kz'.
+                    // The loader maps 'kz' to 'ky' in normalized axes if 'ky' is present? No, let's check loader.
+
+                    if (this.ui.dataInfo) {
+                        this.ui.dataInfo.textContent += " (Converted to kx-kz)";
+                    }
+
+                } catch (e) {
+                    console.error("Conversion Error:", e);
+                    alert("Conversion Error: " + e.message);
+                } finally {
+                    restoreBtn();
+                }
+            });
+        }
         // Convert / k-space group visibility handling
         const convertGroup = document.getElementById('convert-controls');
         if (convertGroup) {
@@ -446,47 +651,115 @@ class App {
             });
         }
 
+        // Colormap Controls Toggle
+        if (this.ui.colormapToggleHeader) {
+            // Check initial state
+            if (this.ui.colormapControls && this.ui.colormapControls.style.display === 'none') {
+                this.ui.colormapHeaderIcon.classList.remove('rotate-icon');
+            }
+
+            this.ui.colormapToggleHeader.addEventListener('click', () => {
+                const isHidden = this.ui.colormapControls.style.display === 'none';
+                this.ui.colormapControls.style.display = isHidden ? 'block' : 'none';
+                this.ui.colormapHeaderIcon.classList.toggle('rotate-icon', isHidden);
+            });
+        }
+
+        // Parameters Controls Toggle
+        if (this.ui.parametersToggleHeader) {
+            // Check initial state
+            if (this.ui.parametersControls && this.ui.parametersControls.style.display === 'none') {
+                this.ui.parametersHeaderIcon.classList.remove('rotate-icon');
+            }
+
+            this.ui.parametersToggleHeader.addEventListener('click', () => {
+                const isHidden = this.ui.parametersControls.style.display === 'none';
+                this.ui.parametersControls.style.display = isHidden ? 'block' : 'none';
+                this.ui.parametersHeaderIcon.classList.toggle('rotate-icon', isHidden);
+            });
+        }
+
         const updateEnhancement = () => {
+            const claheEnabled = this.ui.claheEnableCheck ? this.ui.claheEnableCheck.checked : false;
+            const curvatureEnabled = this.ui.curvatureEnableCheck ? this.ui.curvatureEnableCheck.checked : false;
+
+            // Sub-features imply global enabled
+            const isEnabled = claheEnabled || curvatureEnabled ||
+                (parseFloat(this.ui.smoothSlider.value) > 0) ||
+                (parseFloat(this.ui.sharpenSlider.value) > 0) ||
+                (parseInt(this.ui.bgSlider.value) > 0);
+
             const opts = {
-                enabled: this.ui.enhanceEnableCheck.checked,
+                enabled: isEnabled,
                 smoothing: parseFloat(this.ui.smoothSlider.value),
                 sharpen: parseFloat(this.ui.sharpenSlider.value),
                 background: parseInt(this.ui.bgSlider.value),
-                clahe: this.ui.claheEnableCheck.checked,
+                clahe: claheEnabled,
                 claheClip: parseFloat(this.ui.claheSlider.value),
-                curvature: this.ui.curvatureEnableCheck ? this.ui.curvatureEnableCheck.checked : false,
+                curvature: curvatureEnabled,
                 curvatureStrength: this.ui.curvatureSlider ? parseFloat(this.ui.curvatureSlider.value) : 1.0
             };
             console.log("App.updateEnhancement:", opts);
             this.visualizer.setEnhancement(opts);
         };
 
-        this.ui.enhanceEnableCheck.addEventListener('change', updateEnhancement);
+        // this.ui.enhanceEnableCheck removed.
+
+
+        // hv Mapping Controls
+
+
+        if (this.ui.hvMappingEnableCheck) {
+            this.ui.hvMappingEnableCheck.addEventListener('change', (e) => {
+                // Toggle specific buttons visibility
+                const normBtn = document.getElementById('normalization-btn');
+                const kxkzBtn = document.getElementById('convert-kxkz-btn');
+                const kxhvBtn = document.getElementById('convert-kxhv-btn');
+                const angleToKBtn = document.getElementById('angle-to-k-btn');
+
+                if (normBtn) normBtn.style.display = e.target.checked ? 'block' : 'none';
+                // if (kxkzBtn) kxkzBtn.style.display = e.target.checked ? 'block' : 'none'; // Temporarily hidden as functionality is incomplete
+                if (kxhvBtn) kxhvBtn.style.display = e.target.checked ? 'block' : 'none';
+
+                // Toggle standard convert button inversely? 
+                // The user request didn't explicitly ask to hide angle-to-k-btn, but typically mode switches imply substitution.
+                // Previously the entire convert section was hidden. Now we keep it for new buttons.
+                // Let's hide the standard button to be clean.
+                if (angleToKBtn) angleToKBtn.style.display = e.target.checked ? 'none' : 'block';
+
+                if (this.ui.hvMappingConditionalContent) {
+                    this.ui.hvMappingConditionalContent.style.display = e.target.checked ? 'block' : 'none';
+                }
+
+                // Toggle EF Fit Range
+                const efFitRangeRow = document.getElementById('ef-fit-range-row');
+                if (efFitRangeRow) {
+                    efFitRangeRow.style.display = e.target.checked ? 'flex' : 'none';
+                }
+            });
+        }
+
+        if (this.ui.normalizationBtn) {
+            this.ui.normalizationBtn.addEventListener('click', () => {
+                this.normalize3DScans();
+            });
+        }
 
         // Note: Auto-align checkbox and re-detect button removed; use "Auto Set EF" in Convert controls.
 
         this.ui.smoothSlider.addEventListener('input', (e) => {
             console.log("Smooth slider input:", e.target.value);
             if (this.ui.smoothVal) this.ui.smoothVal.textContent = e.target.value;
-            if (!this.ui.enhanceEnableCheck.checked) {
-                this.ui.enhanceEnableCheck.checked = true;
-            }
             updateEnhancement();
         });
 
         this.ui.sharpenSlider.addEventListener('input', (e) => {
             if (this.ui.sharpenVal) this.ui.sharpenVal.textContent = e.target.value;
-            if (!this.ui.enhanceEnableCheck.checked) {
-                this.ui.enhanceEnableCheck.checked = true;
-            }
             updateEnhancement();
         });
 
         this.ui.bgSlider.addEventListener('input', (e) => {
             if (this.ui.bgVal) this.ui.bgVal.textContent = e.target.value;
-            if (!this.ui.enhanceEnableCheck.checked) {
-                this.ui.enhanceEnableCheck.checked = true;
-            }
             updateEnhancement();
         });
 
@@ -506,8 +779,8 @@ class App {
                 if (this.ui.curvatureControls) {
                     this.ui.curvatureControls.style.display = e.target.checked ? 'block' : 'none';
                 }
-                if (!this.ui.enhanceEnableCheck.checked) {
-                    this.ui.enhanceEnableCheck.checked = true;
+                if (this.ui.curvatureControls) {
+                    this.ui.curvatureControls.style.display = e.target.checked ? 'block' : 'none';
                 }
                 updateEnhancement();
             });
@@ -537,26 +810,162 @@ class App {
             });
         }
 
+        // Listen for changes in inputs to update cursor
+        [this.ui.efInput, this.ui.thetaInput, this.ui.scanInput].forEach(input => {
+            if (input) {
+                input.addEventListener('input', () => {
+                    const ef = parseFloat(this.ui.efInput.value);
+                    const theta = parseFloat(this.ui.thetaInput.value);
+                    const scan = this.ui.scanInput ? parseFloat(this.ui.scanInput.value) : undefined;
+
+                    // Construct update object only with valid numbers
+                    const update = {};
+                    if (!isNaN(ef)) update.y = ef;
+                    if (!isNaN(theta)) update.x = theta;
+                    if (!isNaN(scan)) update.z = scan;
+
+                    this.visualizer.setCursor(update);
+                });
+            }
+        });
+
         // Align Energy button - align energy axis to EF value
         if (this.ui.alignEnergyBtn) {
-            this.ui.alignEnergyBtn.addEventListener('click', () => {
-                const ef = parseFloat(this.ui.efInput.value) || 0;
-                this.calibration.fermiOffset = ef;
-                this.recalculateData();
+            this.ui.alignEnergyBtn.addEventListener('click', async () => {
+                let ef = parseFloat(this.ui.efInput.value) || 0;
+
+                // Show loading state
+                this.ui.alignEnergyBtn.disabled = true;
+                this.ui.alignEnergyBtn.textContent = "Aligning...";
+                const restoreBtn = () => {
+                    this.ui.alignEnergyBtn.disabled = false;
+                    this.ui.alignEnergyBtn.textContent = "Align Energy";
+                };
+
+                try {
+                    // Prepare parameters
+                    const hvMappingEnabled = this.ui.hvMappingEnableCheck && this.ui.hvMappingEnableCheck.checked;
+                    let fitRange = 0.5;
+
+                    if (hvMappingEnabled) {
+                        fitRange = parseFloat(this.ui.efFitRangeInput.value) || 0.5;
+                    }
+
+                    // Call Align API
+                    // For 3D data with hv mapping, we send hv_mapping_enabled=true and fit_range
+                    // The backend handles the slice-by-fit logic.
+                    // For 2D data or 3D without mapping, it behaves as a simple shift.
+
+                    console.log(`Aligning Energy. Offset=${ef}, HV Mapping=${hvMappingEnabled}`);
+
+                    const alignRes = await fetch('/api/process/align', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            path: this.selectedFilePath,
+                            axis: 'energy',
+                            offset: ef,
+                            method: `fermi_alignment (E_F=${ef.toFixed(4)})`,
+                            hv_mapping_enabled: hvMappingEnabled,
+                            fit_range: fitRange
+                        })
+                    }).then(r => r.json());
+
+                    if (alignRes.filename) {
+                        // Reload with new file
+                        console.log("Alignment complete, reloading:", alignRes.filename);
+                        this.selectedFilePath = alignRes.filename;
+                        await this.loadSelectedFile({ keepSettings: true });
+
+                        // Reset EF input to 0 since we act as if it is now aligned
+                        this.ui.efInput.value = "0.0000";
+                        // Reset visual calibration offsets since data is now shifted
+                        this.calibration.fermiOffset = 0;
+                        this.recalculateData();
+
+                        if (this.ui.dataInfo) this.ui.dataInfo.textContent = hvMappingEnabled ?
+                            "Energy Aligned (3D Fit & Resample)" : "Energy Aligned (Constant Shift)";
+                    } else {
+                        throw new Error(alignRes.detail || "Alignment API returned no filename");
+                    }
+
+                } catch (e) {
+                    console.error("Align Error:", e);
+                    alert("Align Error: " + e.message);
+                } finally {
+                    restoreBtn();
+                }
             });
         }
 
-        // Align Theta button - align theta axis (and scan axis for 3D) to theta/scan values
+        // Align Theta button
         if (this.ui.alignThetaBtn) {
-            this.ui.alignThetaBtn.addEventListener('click', () => {
+            this.ui.alignThetaBtn.addEventListener('click', async () => {
                 const theta = parseFloat(this.ui.thetaInput.value) || 0;
-                this.calibration.angleOffsetKx = theta;
-                // For 3D data, also align scan axis
-                if (this.originalMeta && this.originalMeta.data_info.ndim === 3) {
-                    const scan = parseFloat(this.ui.scanInput.value) || 0;
-                    this.calibration.angleOffsetKy = scan;
+                let scan = 0;
+                if (this.ui.scanInput) {
+                    scan = parseFloat(this.ui.scanInput.value) || 0;
                 }
-                this.recalculateData();
+
+                // Check HV Mapping status
+                const hvMappingCheck = document.getElementById('hv-mapping-enable-check');
+                const isHvMappingEnabled = hvMappingCheck ? hvMappingCheck.checked : false;
+
+                this.ui.alignThetaBtn.disabled = true;
+                this.ui.alignThetaBtn.textContent = "Aligning...";
+                const restoreBtn = () => {
+                    this.ui.alignThetaBtn.disabled = false;
+                    this.ui.alignThetaBtn.textContent = "Align Theta";
+                };
+
+                try {
+                    let currentPath = this.selectedFilePath;
+
+                    console.log(`Aligning Theta=${theta}, Scan=${scan}, HV_Mapping=${isHvMappingEnabled}...`);
+
+                    // Unified Alignment Request
+                    const res = await fetch('/api/process/align', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            path: currentPath,
+                            axis: 'kx', // Primary axis (usually mapped to angle/theta/kx)
+                            offset: theta,
+                            scan_axis: 'scan', // Secondary axis
+                            scan_offset: scan,
+                            hv_mapping_enabled: isHvMappingEnabled,
+                            method: 'composite_align'
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Align failed");
+                    }
+
+                    const data = await res.json();
+                    currentPath = data.filename;
+
+                    // Reload
+                    console.log("Alignment complete, reloading:", currentPath);
+                    this.selectedFilePath = currentPath;
+                    await this.loadSelectedFile({ keepSettings: true });
+
+                    // Reset inputs
+                    this.ui.thetaInput.value = "0.00";
+                    if (this.ui.scanInput) this.ui.scanInput.value = "0.00";
+
+                    // Reset visual offsets
+                    this.calibration.angleOffsetKx = 0;
+                    this.calibration.angleOffsetKy = 0;
+                    this.recalculateData();
+
+                } catch (e) {
+                    console.error("Align Error:", e);
+                    alert("Align Error: " + e.message);
+                } finally {
+                    restoreBtn();
+                }
             });
         }
     }
@@ -569,9 +978,11 @@ class App {
         this.ui.cmaxVal.textContent = max;
     }
 
-    async loadSelectedFile() {
+    async loadSelectedFile(options = {}) {
         let filename = this.selectedFilePath;
         if (!filename && !this.selectedFileObj) return;
+
+        const keepSettings = options.keepSettings || false;
 
         this.ui.loadBtn.disabled = true;
         this.ui.loadBtn.textContent = "Loading...";
@@ -588,8 +999,10 @@ class App {
 
             if (this.ui.dataInfo) this.ui.dataInfo.textContent = `Loading ${filename}...`;
 
-            // Reset calibration
-            this.calibration = { angleOffsetKx: 0, angleOffsetKy: 0, fermiOffset: 0 };
+            // Reset calibration unless keeping settings
+            if (!keepSettings) {
+                this.calibration = { angleOffsetKx: 0, angleOffsetKy: 0, fermiOffset: 0 };
+            }
 
             // 1. Load Metadata
             const meta = await this.dataLoader.loadMetadata(filename);
@@ -600,6 +1013,11 @@ class App {
             this.originalData = data;
 
             // 3. Initial Recalculate (handles display)
+
+
+            // Settings regarding HV Mapping, CLAHE, Curvature are now preserved throughout file loads.
+
+
             this.recalculateData();
 
             // Auto-adjust contrast after loading new data
@@ -628,6 +1046,28 @@ class App {
             const is3D = meta.data_info.ndim === 3;
             document.getElementById('z-axis-group').style.display = is3D ? 'block' : 'none';
             document.getElementById('3d-mapping-controls').style.display = is3D ? 'block' : 'none';
+
+            // Handle HV Mapping Checkbox for 2D/3D
+            // Handle HV Mapping Checkbox for 2D/3D
+            const hvCheck = document.getElementById('hv-mapping-enable-check');
+            if (hvCheck) {
+                // Find proper container: ideally #hv-mapping-mode, else checkbox-row
+                const container = document.getElementById('hv-mapping-mode') || hvCheck.closest('.checkbox-row');
+
+                if (!is3D) {
+                    // 2D Data: Hide completely
+                    hvCheck.checked = false;
+                    if (container) container.style.display = 'none';
+
+                    // Also hide conditional content
+                    const hvContent = document.getElementById('hv-mapping-conditional-content');
+                    if (hvContent) hvContent.style.display = 'none';
+                } else {
+                    // 3D Data: Show
+                    if (container) container.style.display = 'block'; // or flex/initial
+                }
+            }
+
             // Show/hide scan input row for 3D data
             if (this.ui.scanInputRow) {
                 this.ui.scanInputRow.style.display = is3D ? 'flex' : 'none';
@@ -635,19 +1075,26 @@ class App {
 
             // Default axis assignment: for 3D data, set X to Angle, Y to Energy, Z to Scan.
             // User can change these via the Axis Management panel; reflect defaults in the UI.
-            if (is3D) {
-                if (this.ui.xAxisType) this.ui.xAxisType.value = 'angle';
-                if (this.ui.yAxisType) this.ui.yAxisType.value = 'energy';
-                if (this.ui.zAxisType) this.ui.zAxisType.value = 'scan';
-            } else {
-                // 2D defaults
-                if (this.ui.xAxisType) this.ui.xAxisType.value = 'angle';
-                if (this.ui.yAxisType) this.ui.yAxisType.value = 'energy';
+            // Default axis assignment based on metadata
+            let defaultX = 'angle';
+            let defaultY = 'energy';
+            let defaultZ = 'scan';
+
+            // Check if data is converted to k-space
+            const conversion = (meta.metadata && meta.metadata.conversion) || '';
+            const isKSpace = conversion.includes('to_k') || conversion.includes('kx_ky') || (meta.axes && meta.axes.k);
+
+            if (isKSpace) {
+                defaultX = 'k';
             }
 
-            // Reset mapping UI
-            this.ui.xAxisType.value = 'angle';        // Reset Mapping UI
-            this.ui.yAxisType.value = 'energy';
+            // Apply defaults
+            if (this.ui.xAxisType) this.ui.xAxisType.value = defaultX;
+            if (this.ui.yAxisType) this.ui.yAxisType.value = defaultY;
+
+            if (is3D) {
+                if (this.ui.zAxisType) this.ui.zAxisType.value = defaultZ;
+            }
             document.getElementById('mapping-mode-select').value = 'kx-ky';
             document.getElementById('kz-mode-select').value = 'convert';
             document.getElementById('kz-mode-group').style.display = 'none';
@@ -1075,6 +1522,101 @@ class App {
 
         // Reload the file
         this.loadSelectedFile();
+    }
+
+    normalize3DScans() {
+        if (!this.originalData || !this.originalMeta) return;
+
+        // Check if data is 3D
+        if (this.originalMeta.data_info.ndim !== 3) {
+            alert("Normalization is only applicable to 3D datasets.");
+            return;
+        }
+
+        const [d0, d1, d2] = this.originalMeta.data_info.shape;
+        // d0: Energy (rows)
+        // d1: Angle (cols)
+        // d2: Scan (slices)
+
+        const data = this.originalData;
+        const totalIntensities = new Float64Array(d2); // Use Float64 for accumulation precision
+
+        // 1. Calculate Total Intensity for each scan slice
+        for (let z = 0; z < d2; z++) {
+            let sum = 0;
+            for (let y = 0; y < d0; y++) {
+                for (let x = 0; x < d1; x++) {
+                    const idx = y * d1 * d2 + x * d2 + z;
+                    sum += data[idx];
+                }
+            }
+            totalIntensities[z] = sum;
+        }
+
+        // 2. Normalize each scan
+        let normalizedCount = 0;
+        // Recalculate min/max while normalizing
+        let newMin = Infinity;
+        let newMax = -Infinity;
+        const TARGET_INTENSITY = 100.0;
+
+        for (let z = 0; z < d2; z++) {
+            const currentSum = totalIntensities[z];
+
+            // Avoid division by zero if a scan is empty/dead
+            if (currentSum > 0) {
+                const factor = TARGET_INTENSITY / currentSum;
+
+                for (let y = 0; y < d0; y++) {
+                    for (let x = 0; x < d1; x++) {
+                        const idx = y * d1 * d2 + x * d2 + z;
+                        const val = data[idx] * factor;
+                        data[idx] = val;
+
+                        // Update stats
+                        if (val < newMin) newMin = val;
+                        if (val > newMax) newMax = val;
+                    }
+                }
+                normalizedCount++;
+            } else {
+                // If sum is 0, we can't normalize, just update stats for existing zeros
+                for (let y = 0; y < d0; y++) {
+                    for (let x = 0; x < d1; x++) {
+                        const idx = y * d1 * d2 + x * d2 + z;
+                        const val = data[idx];
+                        if (val < newMin) newMin = val;
+                        if (val > newMax) newMax = val;
+                    }
+                }
+            }
+        }
+
+        console.log(`Normalized ${normalizedCount} scans. Each non-empty scan now sums to ${TARGET_INTENSITY}.`);
+
+        // 3. Update Metadata Statistics
+        // This is CRITICAL for colormap to work correctly, as min/max have changed.
+        if (isFinite(newMin) && isFinite(newMax)) {
+            this.originalMeta.data_info.min = newMin;
+            this.originalMeta.data_info.max = newMax;
+            console.log(`Updated Metadata Stats: Min=${newMin}, Max=${newMax}`);
+        }
+
+        // Update display
+        this.recalculateData();
+
+        // Auto-contrast to fit new range
+        this.visualizer.autoContrast();
+        this.updateContrastUI();
+
+        // Notify user
+        if (this.ui.dataInfo) {
+            const oldText = this.ui.dataInfo.textContent;
+            this.ui.dataInfo.textContent = "Total Intensity Normalization applied (Sum=100).";
+            setTimeout(() => {
+                if (this.ui.dataInfo) this.ui.dataInfo.textContent = oldText;
+            }, 3000);
+        }
     }
 
     exportProfiles() {

@@ -530,12 +530,16 @@ input:checked+.slider:before {
 }
 
 /* Enhancement Panel */
-#enhance-toggle-header {
+#enhance-toggle-header,
+#colormap-toggle-header,
+#parameters-toggle-header {
     user-select: none;
     padding: 5px 0;
 }
 
-#enhance-toggle-header:hover {
+#enhance-toggle-header:hover,
+#colormap-toggle-header:hover,
+#parameters-toggle-header:hover {
     color: var(--accent-color);
 }
 

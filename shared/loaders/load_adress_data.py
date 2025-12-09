@@ -258,24 +258,78 @@ def load(path: str) -> xr.DataArray:
         # 2D: Transpose -> [1, 0]
         
         if raw_data.ndim == 3:
-            data = np.transpose(raw_data, (1, 0, 2))
-            # New dims: 0=Energy (was 1), 1=Angle (was 0), 2=Scan (was 2)
+             # Check for processed flag
+            is_processed = False
+            if 'is_adapt_processed' in f.attrs and f.attrs['is_adapt_processed']:
+                is_processed = True
+            elif data_key in f and 'is_adapt_processed' in f[data_key].attrs:
+                if f[data_key].attrs['is_adapt_processed']:
+                    is_processed = True
             
-            # Map axes info to new dimensions
-            # axes_info['dim0'] was Angle (now dim 1)
-            # axes_info['dim1'] was Energy (now dim 0)
-            # axes_info['dim2'] was Scan (now dim 2)
-            
-            energy_axis = _create_axis(axes_info.get('dim1'), data.shape[0])
-            angle_axis = _create_axis(axes_info.get('dim0'), data.shape[1])
-            scan_axis = _create_axis(axes_info.get('dim2'), data.shape[2])
+            if is_processed:
+                data = raw_data
+                # Dimensions are already (Energy, Angle, Scan)
+                
+                # Default to axes_info logic
+                energy_axis = _create_axis(axes_info.get('dim1'), data.shape[0])
+                angle_axis = _create_axis(axes_info.get('dim0'), data.shape[1])
+                scan_axis = _create_axis(axes_info.get('dim2'), data.shape[2])
+
+                # Try to load explicit coordinate arrays if available
+                # Common names: "energy", "angle", "scan", "kx", "ky", "kz"
+                # energy (dim 0)
+                if 'energy' in f: energy_axis = np.array(f['energy'])
+                
+                # angle (dim 1)
+                if 'angle' in f: angle_axis = np.array(f['angle'])
+                elif 'kx' in f: angle_axis = np.array(f['kx'])
+                elif 'k' in f: angle_axis = np.array(f['k'])
+
+                # scan (dim 2)
+                if 'scan' in f: scan_axis = np.array(f['scan'])
+                elif 'ky' in f: scan_axis = np.array(f['ky'])
+                elif 'kz' in f: scan_axis = np.array(f['kz'])
+                elif 'hv' in f: scan_axis = np.array(f['hv'])
+
+            else:
+                data = np.transpose(raw_data, (1, 0, 2))
+                # New dims: 0=Energy (was 1), 1=Angle (was 0), 2=Scan (was 2)
+                
+                # Map axes info to new dimensions
+                # axes_info['dim0'] was Angle (now dim 1)
+                # axes_info['dim1'] was Energy (now dim 0)
+                # axes_info['dim2'] was Scan (now dim 2)
+                
+                energy_axis = _create_axis(axes_info.get('dim1'), data.shape[0])
+                angle_axis = _create_axis(axes_info.get('dim0'), data.shape[1])
+                scan_axis = _create_axis(axes_info.get('dim2'), data.shape[2])
             
         elif raw_data.ndim == 2:
-            data = raw_data.T
-            # New dims: 0=Energy (was 1), 1=Angle (was 0)
+             # Check for processed flag
+            is_processed = False
+            if 'is_adapt_processed' in f.attrs and f.attrs['is_adapt_processed']:
+                is_processed = True
+            elif data_key in f and 'is_adapt_processed' in f[data_key].attrs:
+                if f[data_key].attrs['is_adapt_processed']:
+                    is_processed = True
+
+            if is_processed:
+                data = raw_data
+                energy_axis = _create_axis(axes_info.get('dim1'), data.shape[0])
+                angle_axis = _create_axis(axes_info.get('dim0'), data.shape[1])
+
+                # Try to load explicit coordinate arrays
+                if 'energy' in f: energy_axis = np.array(f['energy'])
+                if 'angle' in f: angle_axis = np.array(f['angle'])
+                elif 'k' in f: angle_axis = np.array(f['k'])
+                elif 'kx' in f: angle_axis = np.array(f['kx'])
+            else:
+                data = raw_data.T
+                # New dims: 0=Energy (was 1), 1=Angle (was 0)
+                
+                energy_axis = _create_axis(axes_info.get('dim1'), data.shape[0])
+                angle_axis = _create_axis(axes_info.get('dim0'), data.shape[1])
             
-            energy_axis = _create_axis(axes_info.get('dim1'), data.shape[0])
-            angle_axis = _create_axis(axes_info.get('dim0'), data.shape[1])
             scan_axis = np.array([]) # Empty for 2D
             
         else:
