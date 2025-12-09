@@ -78,6 +78,13 @@ except ImportError as e:
     print(f"WARNING: Could not import angle_to_k module: {e}")
     def convert_angle_to_k(*args, **kwargs): raise ImportError(f"Angle to K conversion not available: {e}")
 
+# 4. Edit Module (Crop)
+try:
+    from processing.edit import crop_data
+except ImportError as e:
+    print(f"WARNING: Could not import edit module: {e}")
+    def crop_data(*args, **kwargs): raise ImportError(f"Crop not available: {e}")
+
 app = FastAPI(title="ARPES Visualization Tool")
 
 # Enable CORS
@@ -495,6 +502,10 @@ class ConvertKRequest(BaseModel):
     hv_dim: Optional[str] = None
     convert_hv_to_kz: bool = False
 
+class CropRequest(BaseModel):
+    path: str
+    ranges: dict # {'x': [start, end], 'y': [start, end], 'z': [start, end]}
+
 @app.post("/api/process/align")
 async def align_data(request: AlignRequest):
     """Align data along an axis and return path to new file."""
@@ -781,6 +792,68 @@ async def convert_k(request: ConvertKRequest):
                 for coord in converted.coords:
                     f.create_dataset(coord, data=converted.coords[coord].values)
                 for k, v in converted.attrs.items():
+                    try:
+                        f.attrs[k] = v
+                    except:
+                        f.attrs[k] = str(v)
+                        
+        return {"filename": save_path}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/process/crop")
+async def crop_endpoint(request: CropRequest):
+    """Crop data and return path to new file."""
+    file_path = request.path
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(DATA_DIR, file_path)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        # Load data
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.h5' or ext == '.nxs' or ext == '.hdf5':
+            data = load_hdf5_data(file_path)
+        elif ext == '.ibw':
+            data = load_ibw(file_path)
+        elif ext == '.zip':
+             data = load_ses_zip(file_path)
+        else:
+             raise HTTPException(status_code=400, detail="Unsupported file type for processing")
+
+        if not isinstance(data, xr.DataArray):
+             raise HTTPException(status_code=400, detail="Data must be xarray for cropping")
+
+        print(f"Cropping data. Ranges={request.ranges}")
+
+        # Call crop logic
+        cropped = crop_data(data, request.ranges)
+        
+        # Add processed flag
+        cropped.attrs['is_adapt_processed'] = True
+        cropped.attrs['crop_ranges'] = str(request.ranges)
+
+        # Save to new temp file
+        import h5py
+        suffix = ".h5"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="cropped_") as tmp:
+            save_path = tmp.name
+            TEMP_FILES.append(save_path)
+        
+        try:
+            cropped.to_netcdf(save_path, engine='h5netcdf')
+        except Exception as e:
+            print(f"Warning: standard save failed {e}, using h5py fallback")
+            with h5py.File(save_path, 'w') as f:
+                ds = f.create_dataset('data', data=cropped.values)
+                for coord in cropped.coords:
+                    f.create_dataset(coord, data=cropped.coords[coord].values)
+                for k, v in cropped.attrs.items():
                     try:
                         f.attrs[k] = v
                     except:

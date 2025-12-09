@@ -1378,49 +1378,98 @@ class App {
         }
     }
 
-    confirmCrop() {
-        const success = this.visualizer.applyCrop();
-        if (success) {
-            // Update App's source of truth with the cropped data
-            this.originalData = this.visualizer.data;
+    async confirmCrop() {
+        if (!this.visualizer.cropBox) return;
 
-            // Deep copy metadata
-            const newMeta = JSON.parse(JSON.stringify(this.visualizer.metadata));
+        const indices = this.visualizer.getCropIndices();
+        if (!indices) {
+            alert("Could not determine crop indices");
+            return;
+        }
 
-            // CRITICAL FIX for energy shift bug:
-            // The problem: visualizer.metadata.axes have ALREADY been shifted by calibration offsets
-            // (because recalculateData() subtracts the offsets from originalMeta before displaying).
-            // When we crop, applyCrop2D slices these already-shifted axes.
-            // If we save them as-is to originalMeta, and then recalculateData() subtracts offsets AGAIN,
-            // we get double-shifting.
-            //
-            // Solution: Add the offsets BACK to the axes before saving to originalMeta.
-            // This "un-shifts" them so they represent the original coordinate system.
-            // Then recalculateData() will apply the offsets correctly.
-            if (newMeta.axes.kx) {
-                newMeta.axes.kx = newMeta.axes.kx.map(v => v + this.calibration.angleOffsetKx);
-            }
-            if (newMeta.axes.ky) {
-                newMeta.axes.ky = newMeta.axes.ky.map(v => v + this.calibration.angleOffsetKy);
-            }
-            if (newMeta.axes.energy) {
-                newMeta.axes.energy = newMeta.axes.energy.map(v => v + this.calibration.fermiOffset);
-            }
+        const { x0, x1, y0, y1 } = indices;
+        const ranges = {};
 
-            this.originalMeta = newMeta;
-
-            // Update metadata display with new shape
-            const filepath = this.selectedFilePath || "cropped data";
-            this.displayMetadata(this.originalMeta, filepath);
-
-            // Recalculate to ensure consistency
-            this.recalculateData();
-
-            // Auto-contrast for the new area
-            this.visualizer.autoContrast();
-            this.updateContrastUI();
+        // Map visualizer view coordinates to data dimensions (x=Angle, y=Energy, z=Scan)
+        if (this.originalMeta.data_info.ndim === 2) {
+            // 2D: X(dim1)=Angle, Y(dim0)=Energy
+            ranges.x = [x0, x1];
+            ranges.y = [y0, y1];
         } else {
-            alert("Failed to apply crop");
+            // 3D mapping based on active view
+            const plane = this.visualizer.activeCropView;
+            if (plane === 'xy') {
+                // X=Angle(dim1), Y=Energy(dim0)
+                ranges.x = [x0, x1];
+                ranges.y = [y0, y1];
+            } else if (plane === 'xz') {
+                // X=Scan(dim2), Y=Energy(dim0)
+                ranges.z = [x0, x1];
+                ranges.y = [y0, y1];
+            } else if (plane === 'yz') {
+                // X=Scan(dim2), Y=Angle(dim1)
+                ranges.z = [x0, x1];
+                ranges.x = [y0, y1];
+            } else {
+                alert("Unknown crop view");
+                return;
+            }
+        }
+
+        console.log("Applying Server-Side Crop:", ranges);
+
+        // UI State
+        if (this.ui.confirmCropBtn) {
+            this.ui.confirmCropBtn.disabled = true;
+            this.ui.confirmCropBtn.textContent = "Cropping...";
+        }
+
+        try {
+            const res = await fetch('/api/process/crop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    path: this.selectedFilePath,
+                    ranges: ranges
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Crop failed");
+            }
+
+            const data = await res.json();
+            console.log("Crop complete, reloading:", data.filename);
+
+            // Exit local crop mode UI
+            this.visualizer.exitCropMode();
+
+            // Update file path and reload
+            this.selectedFilePath = data.filename;
+
+            // Reload with keepSettings=true to preserve viewer settings (colormap etc)
+            // But NOT calibration if the axes have changed? 
+            // Actually, keepSettings=true preserves calibration offsets.
+            // Since the new file will have the same PHYSICAL values (just fewer of them),
+            // and calibration offsets are physical shifts, they should remain valid.
+            // E.g. Fermi is still at -0.5eV if we didn't crop it out.
+            await this.loadSelectedFile({ keepSettings: true });
+
+            if (this.ui.dataInfo) {
+                this.ui.dataInfo.textContent += " (Cropped)";
+            }
+
+        } catch (e) {
+            console.error("Crop Error:", e);
+            alert("Crop Error: " + e.message);
+        } finally {
+            // Restore UI
+            if (this.ui.confirmCropBtn) {
+                this.ui.confirmCropBtn.disabled = false;
+                this.ui.confirmCropBtn.textContent = "Confirm Crop";
+            }
+            this.onCropModeExited(); // Force exit UI helper
         }
     }
 

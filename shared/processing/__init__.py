@@ -60,9 +60,16 @@ try:
         reduce_to_2d,
         merge_to_3d,
         interpolate_to_common_grid,
+        interpolate_to_common_grid,
         crop,
         normalize_slices
     )
+except ImportError:
+    pass
+
+# Edit (needs xarray)
+try:
+    from .edit import crop_data
 except ImportError:
     pass
 
