@@ -9,50 +9,98 @@ ADAPT is a comprehensive toolkit designed for the visualization and analysis of 
 *   **Integrated Workflow**: Seamlessly switch between the browser and the 3D viewer.
 *   **Data Support**: Supports standard ARPES data formats (HDF5, Igor Binary Wave).
 
-## Installation
+### Installation
 
-### Prerequisites
-
-*   Python 3.9 or higher
-*   Git
-
-### Setup
-
-1.  Clone the repository:
+#### macOS
+1.  **Install Homebrew** (if not already installed):
     ```bash
-    git clone https://github.com/quantum-ctrl/adapt.git
-    cd ADAPT
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     ```
-
-2.  Install dependencies using the provided script:
+2.  **Install Python 3**:
     ```bash
-    ./run.sh install
+    brew install python
     ```
-    Or manually via pip:
+3.  **Create Virtual Environment**:
+    ```bash
+    python3 -m venv venv
+    ```
+4.  **Activate Virtual Environment**:
+    ```bash
+    source venv/bin/activate
+    ```
+5.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
 
+
+#### Windows
+1.  **Install Python 3**:
+    Download and install Python 3.9+ from [python.org](https://www.python.org/downloads/). Ensure you check **"Add Python to PATH"** during installation.
+2.  **Create Virtual Environment**:
+    Open PowerShell or Command Prompt and run:
+    ```powershell
+    python -m venv venv
+    ```
+3.  **Activate Virtual Environment**:
+    ```powershell
+    .\venv\Scripts\activate
+    ```
+4.  **Install Dependencies**:
+    ```powershell
+    pip install -r requirements.txt
+    ```
+
+
+#### Linux (Ubuntu/Debian)
+1.  **Install System Dependencies**:
+    ```bash
+    sudo apt update
+    sudo apt install python3 python3-venv python3-pip git
+    ```
+2.  **Create Virtual Environment**:
+    ```bash
+    python3 -m venv venv
+    ```
+3.  **Activate Virtual Environment**:
+    ```bash
+    source venv/bin/activate
+    ```
+4.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+
 ## Usage
+
+### macOS / Linux (using `run.sh`)
 
 The specific components can be launched using the `run.sh` helper script.
 
-### Launching the Data Browser
-To start the desktop GUI for browsing files:
-```bash
-./run.sh browser
-```
-
-### Launching the 3D Viewer
-To start the web-based visualization server (default: http://localhost:8000):
-```bash
-./run.sh viewer
-```
-
-### Launching Both
-To run both the browser and viewer simultaneously (recommended):
+#### Launching Both (Recommended)
 ```bash
 ./run.sh both
+```
+
+#### Launching Components Individually
+- **Data Browser**: `./run.sh browser`
+- **3D Viewer**: `./run.sh viewer`
+
+### Windows
+
+To run both the Browser and Viewer, open two terminals and run:
+
+**Terminal 1 (Viewer):**
+```powershell
+cd ADAPT_viewer
+python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 2 (Browser):**
+```powershell
+cd ADAPT_browser
+python app.py
 ```
 
 ## Project Structure
