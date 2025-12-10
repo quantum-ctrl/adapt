@@ -67,8 +67,12 @@ export class Visualizer {
         };
     }
 
+    getThemeColor(varName, fallback) {
+        const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+        return val || fallback;
+    }
+
     setEnhancement(opts) {
-        if (DEBUG) console.log("Visualizer.setEnhancement:", opts);
         this.enhancement = { ...this.enhancement, ...opts };
         this.draw();
     }
@@ -87,7 +91,6 @@ export class Visualizer {
             return data;
         }
 
-        if (DEBUG) console.log("Applying enhancement...", this.enhancement);
         let result = data; // Float32Array
 
         // 1. Smoothing
@@ -460,8 +463,12 @@ export class Visualizer {
         );
 
         // 2. Draw Axes
-        ctx.strokeStyle = '#888';
-        ctx.fillStyle = '#ccc';
+        const axisColor = this.getThemeColor('--text-secondary', '#888');
+        const tickColor = this.getThemeColor('--text-secondary', '#ccc'); // Using secondary for ticks too
+        const labelColor = this.getThemeColor('--text-primary', '#e0e0e0');
+
+        ctx.strokeStyle = axisColor;
+        ctx.fillStyle = tickColor;
         ctx.font = '12px sans-serif';
         ctx.lineWidth = 1;
         ctx.textAlign = 'center';
@@ -500,7 +507,7 @@ export class Visualizer {
             });
 
             // X Label
-            ctx.fillStyle = '#e0e0e0';
+            ctx.fillStyle = labelColor;
             ctx.fillText(xLabel || "X", MARGIN.left + plotWidth / 2, MARGIN.top + plotHeight + 25);
         }
 
@@ -518,7 +525,7 @@ export class Visualizer {
 
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#ccc';
+            ctx.fillStyle = tickColor;
 
             ticks.forEach(val => {
                 const t = (val - yMin) / (yMax - yMin);
@@ -546,7 +553,7 @@ export class Visualizer {
             ctx.translate(15, MARGIN.top + plotHeight / 2);
             ctx.rotate(-Math.PI / 2);
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#e0e0e0';
+            ctx.fillStyle = labelColor;
             ctx.fillText(yLabel || "Y", 0, 0);
             ctx.restore();
         }
@@ -831,13 +838,22 @@ export class Visualizer {
         }
 
         // Draw background
-        ctx.fillStyle = '#0a0a0a';
+        ctx.fillStyle = this.getThemeColor('--bg-plot-panel', '#0a0a0a');
         ctx.fillRect(padding.left, padding.top, plotW, plotH);
 
         // Draw cursor indicator line (before profile so profile is on top)
         if (cursorIndex !== null && cursorIndex >= 0 && cursorIndex < data.length) {
             const cursorX = padding.left + (cursorIndex / (data.length - 1)) * plotW;
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.strokeStyle = this.getThemeColor('--text-primary', '#fff'); // Use primary text color for cursor line roughly
+            // Or better: use a contrasting color or specific var. 
+            // In dark mode white is good. In light mode black is good. --text-primary fits.
+            // But let's set alpha if needed. 
+            // Actually, let's keep it simple:
+            const cursorBaseWithAlpha = this.getThemeColor('--text-primary', '#e0e0e0');
+            ctx.strokeStyle = cursorBaseWithAlpha;
+            // Note: Canvas strokeStyle string parsing handles vars if they are color strings.
+            // But --text-primary is a hex. We might want alpha. 
+            // Let's just use the solid color for now or rely on canvas globalAlpha if we wanted translucency.
             ctx.lineWidth = 1;
             ctx.setLineDash([3, 3]);
             ctx.beginPath();
@@ -867,8 +883,9 @@ export class Visualizer {
             const axisMax = axis[axis.length - 1];
             const ticks = this.getNiceTicks(axisMin, axisMax, Math.max(3, Math.floor(plotW / 50)));
 
-            ctx.strokeStyle = '#555';
-            ctx.fillStyle = '#888';
+            const axisColor = this.getThemeColor('--text-secondary', '#888');
+            ctx.strokeStyle = axisColor;
+            ctx.fillStyle = axisColor;
             ctx.font = '9px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
@@ -900,7 +917,7 @@ export class Visualizer {
         }
 
         // Draw axis label
-        ctx.fillStyle = '#aaa';
+        ctx.fillStyle = this.getThemeColor('--text-secondary', '#aaa');
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(label, padding.left + plotW / 2, rect.height - 3);
@@ -1424,7 +1441,17 @@ export class Visualizer {
             this.contrastMax = 100;
         }
 
-        if (DEBUG) console.log(`Auto Contrast: Min=${this.contrastMin.toFixed(2)}%, Max=${this.contrastMax.toFixed(2)}%`);
+        // Update state
+        this.enhancement.contrastMin = this.contrastMin;
+        this.enhancement.contrastMax = this.contrastMax;
+
+        // Notify callback
+        if (this.onEnhancementChange) {
+            this.onEnhancementChange({
+                contrastMin: this.contrastMin,
+                contrastMax: this.contrastMax
+            });
+        }
 
         this.draw();
     }

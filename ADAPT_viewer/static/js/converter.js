@@ -2,7 +2,7 @@ import * as Physics from './physics.js';
 
 export class KConverter {
     static convert2D(data, meta, hv, workFunc) {
-        console.log("KConverter: Converting 2D to k-space...");
+        // console.log("KConverter: Converting 2D to k-space...");
         const angleAxis = meta.axes.kx; // Angle
         const energyAxis = meta.axes.energy; // Energy
         const width = meta.data_info.shape[1];
@@ -27,7 +27,7 @@ export class KConverter {
     }
 
     static convert3D(data, meta, hv, workFunc, innerPot, mappingMode, kzMode) {
-        console.log("KConverter: Converting 3D to k-space...");
+        // console.log("KConverter: Converting 3D to k-space...");
 
         // Axes: dim0=Energy, dim1=Angle, dim2=Scan(AngleY or hv)
         const axes = {

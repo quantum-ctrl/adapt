@@ -1,4 +1,5 @@
 :root {
+    /* Dark Theme (Default) */
     --bg-dark: #121212;
     --bg-panel: #1e1e1e;
     --text-primary: #e0e0e0;
@@ -7,6 +8,26 @@
     --accent-hover: #43a047;
     --border-color: #333;
     --input-bg: #2c2c2c;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+    --bg-plot: #000000;
+    --bg-plot-panel: #0a0a0a;
+    --range-track-bg: #3a3a3a;
+}
+
+[data-theme="light"] {
+    /* Light Theme */
+    --bg-dark: #f5f5f5;
+    --bg-panel: #ffffff;
+    --text-primary: #222222;
+    --text-secondary: #444444;
+    --accent-color: #2e7d32;
+    --accent-hover: #1b5e20;
+    --border-color: #e0e0e0;
+    --input-bg: #eeeeee;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --bg-plot: #ffffff;
+    --bg-plot-panel: #f0f0f0;
+    --range-track-bg: #b0b0b0;
 }
 
 * {
@@ -36,7 +57,7 @@ body {
     padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 15px;
     overflow-y: auto;
 }
 
@@ -63,21 +84,59 @@ body {
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--accent-color);
+    margin: 0;
+}
+
+.sidebar-header {
+    position: relative;
+    padding-right: 30px;
+    /* Ensure text doesn't overlap button */
 }
 
 .sidebar-header p {
     font-size: 0.9rem;
     color: var(--text-secondary);
+    margin: 0;
+}
+
+.theme-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+.theme-toggle:hover {
+    color: var(--accent-color);
 }
 
 .control-group {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding-bottom: 15px;
+    padding-top: 10px;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color);
 }
 
+.control-group-title {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-bottom: 5px;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Retrofit h3 rule just in case (though we seem to use div.control-group-title now) */
 .control-group h3 {
     font-size: 1rem;
     font-weight: 500;
@@ -98,22 +157,27 @@ label {
 }
 
 select,
-input[type="number"] {
+input[type="number"],
+input[type="text"] {
     background-color: var(--input-bg);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
-    padding: 8px;
+    padding: 4px 6px;
     border-radius: 4px;
     font-family: inherit;
+    font-size: 0.85rem;
+    height: 26px;
+    /* Ensure consistent height */
 }
 
 button {
-    padding: 8px 16px;
+    padding: 4px 8px;
     border-radius: 4px;
     border: none;
     cursor: pointer;
     font-weight: 500;
     transition: background-color 0.2s;
+    font-size: 0.85rem;
 }
 
 .primary-btn {
@@ -187,8 +251,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     height: 6px;
     top: 7px;
     left: 0;
-    background: #3a3a3a;
-    /* Slightly lighter than input-bg for visibility */
+    background: var(--range-track-bg);
     border-radius: 3px;
     z-index: 0;
 }
@@ -306,7 +369,7 @@ input[type="range"]::-moz-range-track {
 /* Main View */
 .main-view {
     flex: 1;
-    background-color: #000;
+    background-color: var(--bg-plot);
     position: relative;
     display: flex;
     justify-content: center;
@@ -347,7 +410,7 @@ input[type="range"]::-moz-range-track {
 }
 
 .grid-cell {
-    background-color: #000;
+    background-color: var(--bg-plot);
     position: relative;
     overflow: hidden;
 }
@@ -447,13 +510,7 @@ input:checked+.slider:before {
 }
 
 /* Crop controls styling */
-#crop-controls {
-    border-color: #33aaff;
-}
 
-#crop-controls .control-group-title {
-    color: #33aaff;
-}
 
 /* Control group title styling */
 .control-group-title {
@@ -563,7 +620,7 @@ input:checked+.slider:before {
 
 .image-panel {
     flex: 3;
-    background-color: #000;
+    background-color: var(--bg-plot);
     position: relative;
     overflow: hidden;
 }
@@ -585,7 +642,7 @@ input:checked+.slider:before {
 
 .profile-cell {
     flex: 1;
-    background-color: #0a0a0a;
+    background-color: var(--bg-plot-panel);
     position: relative;
     overflow: hidden;
 }
@@ -600,9 +657,9 @@ input:checked+.slider:before {
     position: absolute;
     top: 5px;
     left: 5px;
-    color: #888;
+    color: var(--text-secondary);
     font-size: 11px;
-    background-color: rgba(0, 0, 0, 0.7);
+    background-color: var(--input-bg);
     padding: 2px 6px;
     border-radius: 2px;
     pointer-events: none;
@@ -625,7 +682,7 @@ input:checked+.slider:before {
 
 .profile-row {
     flex: 1;
-    background-color: #0a0a0a;
+    background-color: var(--bg-plot-panel);
     position: relative;
     min-height: 0;
 }
@@ -640,10 +697,17 @@ input:checked+.slider:before {
     position: absolute;
     top: 2px;
     left: 4px;
-    color: #666;
+    color: var(--text-secondary);
     font-size: 10px;
-    background-color: rgba(0, 0, 0, 0.7);
+    background-color: var(--input-bg);
     padding: 1px 4px;
     border-radius: 2px;
     pointer-events: none;
+}
+
+/* Small button for input method toggle */
+.small-btn {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    height: auto;
 }

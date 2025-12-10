@@ -100,10 +100,46 @@ class App {
             colormapHeaderIcon: document.getElementById('colormap-header-icon'),
             parametersToggleHeader: document.getElementById('parameters-toggle-header'),
             parametersControls: document.getElementById('parameters-controls'),
-            parametersHeaderIcon: document.getElementById('parameters-header-icon')
+            parametersHeaderIcon: document.getElementById('parameters-header-icon'),
+
+            // Page Switcher UI
+            pageImageBtn: document.getElementById('page-image-btn'),
+            pageBZBtn: document.getElementById('page-bz-btn'),
+            pageImageControls: document.getElementById('page-image-controls'),
+            pageBZControls: document.getElementById('page-bz-controls'),
+            plotContainer: document.getElementById('plot-container'),
+            bzContainer: document.getElementById('bz-container'),
+
+            // BZ UI
+            bzInputManualBtn: document.getElementById('bz-input-manual-btn'),
+            bzInputMPBtn: document.getElementById('bz-input-mp-btn'),
+            bzManualInputs: document.getElementById('bz-manual-inputs'),
+            bzMPInputs: document.getElementById('bz-mp-inputs'),
+            bzLatticeParams: document.getElementById('bz-lattice-params'),
+            bzLatticeAngles: document.getElementById('bz-lattice-angles'),
+            bzCrystalName: document.getElementById('bz-crystal-name'),
+            bzCrystalName: document.getElementById('bz-crystal-name'),
+            bzMPId: document.getElementById('bz-mp-id'),
+            bzCalculateBtn: document.getElementById('bz-calculate-btn'),
+
+            // New Group Headers (Reorganization)
+            visualizationGroupHeader: document.getElementById('visualization-group-header'),
+            visualizationGroupIcon: document.getElementById('visualization-group-icon'),
+            visualizationGroupContent: document.getElementById('visualization-group-content'),
+
+            processingGroupHeader: document.getElementById('processing-group-header'),
+            processingGroupIcon: document.getElementById('processing-group-icon'),
+            processingGroupContent: document.getElementById('processing-group-content'),
+
+            exportGroupHeader: document.getElementById('export-group-header'),
+            exportGroupIcon: document.getElementById('export-group-icon'),
+            exportGroupContent: document.getElementById('export-group-content'),
+
+            themeToggle: document.getElementById('theme-toggle')
         };
 
         this.init();
+        this.initTheme();
     }
 
     async init() {
@@ -126,11 +162,10 @@ class App {
 
         // Force enable enhancement controls to ensure they are not stuck
         this.setControlsDisabled(false);
-        console.log("Enhancement controls initialized:", this.ui.smoothSlider);
 
         // Sync initial enhancement state
         setTimeout(() => {
-            updateEnhancement();
+            this.updateEnhancement();
         }, 100);
 
         // Sync HV Mapping state
@@ -140,8 +175,35 @@ class App {
             }
         }, 100);
 
+
         // Check for session parameter from ADAPT Browser integration
         await this.checkForSession();
+    }
+
+
+    switchPage(page) {
+        if (page === 'image') {
+            this.ui.pageImageBtn.classList.replace('secondary-btn', 'primary-btn');
+            this.ui.pageBZBtn.classList.replace('primary-btn', 'secondary-btn');
+
+            this.ui.pageImageControls.style.display = 'block';
+            this.ui.pageBZControls.style.display = 'none';
+
+            this.ui.plotContainer.style.display = 'flex';
+            this.ui.bzContainer.style.display = 'none';
+
+            // Trigger resize to fix canvas size if it was hidden
+            window.dispatchEvent(new Event('resize'));
+        } else {
+            this.ui.pageBZBtn.classList.replace('secondary-btn', 'primary-btn');
+            this.ui.pageImageBtn.classList.replace('primary-btn', 'secondary-btn');
+
+            this.ui.pageBzControls ? this.ui.pageBzControls.style.display = 'block' : this.ui.pageBZControls.style.display = 'block'; // Case safety
+            this.ui.pageImageControls.style.display = 'none';
+
+            this.ui.bzContainer.style.display = 'flex';
+            this.ui.plotContainer.style.display = 'none';
+        }
     }
 
     /**
@@ -155,11 +217,8 @@ class App {
         const sessionParam = urlParams.get('session');
 
         if (sessionParam !== '1') {
-            console.log("No session parameter, skipping auto-load");
             return;
         }
-
-        console.log("Session parameter detected, loading from ADAPT Browser...");
 
         try {
             // Show loading state
@@ -171,7 +230,6 @@ class App {
             const sessionData = await this.dataLoader.loadSession();
 
             if (!sessionData || !sessionData.file_path) {
-                console.log("No valid session data found");
                 if (this.ui.dataInfo) {
                     this.ui.dataInfo.textContent = "No session file found. Please select a file.";
                 }
@@ -180,7 +238,6 @@ class App {
 
             // Set the file path and trigger load
             const filePath = sessionData.file_path;
-            console.log("Session file path:", filePath);
 
             // Store the path and load the file
             this.selectedFilePath = filePath;
@@ -191,9 +248,6 @@ class App {
 
             // Load the file
             await this.loadSelectedFile();
-
-            // Log successful session load
-            console.log("Successfully loaded file from session:", basename);
 
             // Clear session parameter from URL without reload (cleaner UX)
             const newUrl = window.location.pathname;
@@ -207,7 +261,240 @@ class App {
         }
     }
 
+    initTheme() {
+        // Check localStorage or system preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            this.setTheme(savedTheme);
+        } else {
+            // Default to dark, but check system preference optionally
+            // const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+            // this.setTheme(prefersLight ? 'light' : 'dark');
+            this.setTheme('dark'); // Default for now
+        }
+    }
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        this.setTheme(newTheme);
+    }
+
+    setTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+
+        // Update Toggle Icon
+        if (this.ui.themeToggle) {
+            if (theme === 'light') {
+                // Sun icon
+                this.ui.themeToggle.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                `;
+            } else {
+                // Moon icon
+                this.ui.themeToggle.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                `;
+            }
+        }
+
+        // Trigger redraw if data loaded, as some canvas elements use theme colors
+        if (this.visualizer && this.visualizer.data) {
+            this.visualizer.draw();
+        }
+    }
+
     setupEventListeners() {
+        // Theme Toggle
+        if (this.ui.themeToggle) {
+            this.ui.themeToggle.addEventListener('click', () => this.toggleTheme());
+        }
+
+        // Toggle Logic for Toolbar Groups
+        const setupToggle = (header, content, icon) => {
+            if (!header || !content) return;
+            // Set initial state based on current display style or default
+            // But simply adding listener is enough for interaction.
+
+            header.addEventListener('click', () => {
+                // Check computed style if inline style is not set
+                const isVisible = content.style.display !== 'none';
+
+                content.style.display = isVisible ? 'none' : 'block';
+                if (icon) {
+                    // Open -> Close (0deg), Closed -> Open (180deg)
+                    icon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(180deg)';
+                }
+            });
+        };
+
+        // New Groups
+        setupToggle(this.ui.visualizationGroupHeader, this.ui.visualizationGroupContent, this.ui.visualizationGroupIcon);
+        setupToggle(this.ui.processingGroupHeader, this.ui.processingGroupContent, this.ui.processingGroupIcon);
+        setupToggle(this.ui.exportGroupHeader, this.ui.exportGroupContent, this.ui.exportGroupIcon);
+
+        // Existing Sections (re-using new logic to be safe, or just adding on top?)
+        // The existing sections might not have listeners if I removed them? 
+        // I haven't removed any JS code yet, only added. 
+        // So if there was existing logic elsewhere, it might duplicate.
+        // But I didn't see explicit listeners for colormapToggleHeader in the file earlier.
+        // I will add them here to be sure.
+        // setupToggle(this.ui.colormapToggleHeader, this.ui.colormapControls, this.ui.colormapHeaderIcon);
+        // setupToggle(this.ui.enhanceToggleHeader, this.ui.enhanceControls, this.ui.enhanceHeaderIcon);
+        // setupToggle(this.ui.parametersToggleHeader, this.ui.parametersControls, this.ui.parametersHeaderIcon);
+        // Alignment doesn't have a header in old code, but now it's inside Processing.
+        // HV Mapping has a header.
+        setupToggle(this.ui.hvMappingToggleHeader, this.ui.hvMappingControls, this.ui.hvMappingHeaderIcon);
+
+        // Page Switching
+        if (this.ui.pageImageBtn) {
+            this.ui.pageImageBtn.addEventListener('click', () => this.switchPage('image'));
+            this.ui.pageBZBtn.addEventListener('click', () => this.switchPage('bz'));
+        }
+
+        // BZ Input Method Toggle
+        if (this.ui.bzInputManualBtn) {
+            this.ui.bzInputManualBtn.addEventListener('click', () => {
+                this.ui.bzInputManualBtn.classList.replace('secondary-btn', 'primary-btn');
+                this.ui.bzInputManualBtn.style.color = 'white';
+                this.ui.bzInputMPBtn.classList.replace('primary-btn', 'secondary-btn');
+                this.ui.bzInputMPBtn.style.color = 'var(--text-secondary)';
+
+                this.ui.bzManualInputs.style.display = 'block';
+                this.ui.bzMPInputs.style.display = 'none';
+            });
+            this.ui.bzInputMPBtn.addEventListener('click', () => {
+                this.ui.bzInputMPBtn.classList.replace('secondary-btn', 'primary-btn');
+                this.ui.bzInputMPBtn.style.color = 'white';
+                this.ui.bzInputManualBtn.classList.replace('primary-btn', 'secondary-btn');
+                this.ui.bzInputManualBtn.style.color = 'var(--text-secondary)';
+
+                this.ui.bzManualInputs.style.display = 'none';
+                this.ui.bzMPInputs.style.display = 'block';
+            });
+        }
+
+
+        // Calculate BZ
+        if (this.ui.bzCalculateBtn) {
+            this.ui.bzCalculateBtn.addEventListener('click', async () => {
+                const isManual = this.ui.bzManualInputs.style.display !== 'none';
+                let payload = { method: isManual ? 'manual' : 'mp' };
+
+                if (isManual) {
+                    const paramsStr = this.ui.bzLatticeParams.value || "3.5, 3.5, 3.5";
+                    const anglesStr = this.ui.bzLatticeAngles.value || "90, 90, 90";
+                    const params = paramsStr.split(',').map(s => parseFloat(s.trim()));
+                    const angles = anglesStr.split(',').map(s => parseFloat(s.trim()));
+
+                    if (params.length !== 3 || params.some(isNaN)) {
+                        alert("Invalid lattice parameters. Format: a, b, c"); return;
+                    }
+                    if (angles.length !== 3 || angles.some(isNaN)) {
+                        alert("Invalid angles. Format: alpha, beta, gamma"); return;
+                    }
+                    payload.a = params[0]; payload.b = params[1]; payload.c = params[2];
+                    payload.alpha = angles[0]; payload.beta = angles[1]; payload.gamma = angles[2];
+                    payload.crystal_name = this.ui.bzCrystalName.value;
+                } else {
+                    const mpId = this.ui.bzMPId.value;
+                    if (!mpId) { alert("Please enter MP ID"); return; }
+                    payload.mp_id = mpId;
+                }
+
+                // Detect Theme
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                payload.theme = currentTheme;
+
+                try {
+                    this.ui.bzCalculateBtn.disabled = true;
+                    this.ui.bzCalculateBtn.textContent = "Calculating...";
+
+
+                    const res = await fetch('/api/process/brillouin_zone', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Failed");
+                    }
+
+                    const contentType = res.headers.get('content-type');
+
+                    if (contentType && contentType.includes('application/json')) {
+                        // Plotly JSON response
+                        const plotlyData = await res.json();
+
+                        // Clear container
+                        this.ui.bzContainer.innerHTML = '';
+                        // Set background based on theme strictly to correct previous issues
+                        // Dark: #121212, Light: #ffffff
+                        this.ui.bzContainer.style.background = currentTheme === 'dark' ? '#121212' : '#ffffff';
+                        this.ui.bzContainer.style.display = 'block'; // Block for Plotly div
+
+                        // Ensure unique ID for Plotly
+                        const plotlyDivId = 'bz-plotly-div';
+                        let plotlyDiv = document.getElementById(plotlyDivId);
+                        if (!plotlyDiv) {
+                            plotlyDiv = document.createElement('div');
+                            plotlyDiv.id = plotlyDivId;
+                            plotlyDiv.style.width = '100%';
+                            plotlyDiv.style.height = '100%';
+                            this.ui.bzContainer.appendChild(plotlyDiv);
+                        }
+
+                        // Render Plotly
+                        if (window.Plotly) {
+                            Plotly.newPlot(plotlyDivId, plotlyData.data, plotlyData.layout, { responsive: true });
+                        } else {
+                            throw new Error("Plotly library not loaded");
+                        }
+
+                    } else {
+                        // Fallback to Image (Blob) response
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+
+                        // Render in bzContainer
+                        this.ui.bzContainer.innerHTML = '';
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.style.maxWidth = '100%';
+                        img.style.maxHeight = '100%';
+                        img.style.objectFit = 'contain';
+                        this.ui.bzContainer.appendChild(img);
+                        this.ui.bzContainer.style.background = currentTheme === 'dark' ? '#121212' : '#ffffff';; // Ensure background matches theme
+                        this.ui.bzContainer.style.display = 'flex';
+                        this.ui.bzContainer.style.justifyContent = 'center';
+                        this.ui.bzContainer.style.alignItems = 'center';
+                    }
+
+                } catch (e) {
+                    console.error(e);
+                    alert("Error calculation BZ: " + e.message);
+                } finally {
+                    this.ui.bzCalculateBtn.disabled = false;
+                    this.ui.bzCalculateBtn.textContent = "Calculate BZ";
+                }
+            });
+        }
+
         // Window Resize
         window.addEventListener('resize', () => {
             if (this.visualizer) this.visualizer.onResize();
@@ -329,8 +616,6 @@ class App {
                 const hvMappingCheck = document.getElementById('hv-mapping-enable-check');
                 const isHvMappingEnabled = hvMappingCheck ? hvMappingCheck.checked : false;
 
-                console.log(`Converting to k-space... HV=${hv}, HV Mapping=${isHvMappingEnabled}`);
-
                 const res = await fetch('/api/process/convert_k', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -349,7 +634,6 @@ class App {
                 }
 
                 const data = await res.json();
-                console.log("Conversion complete, reloading:", data.filename);
 
                 // Update file path and load
                 this.selectedFilePath = data.filename;
@@ -385,11 +669,6 @@ class App {
                     const workFunc = parseFloat(this.ui.workFuncInput.value) || 4.5;
                     const innerPot = parseFloat(this.ui.innerPotInput.value) || 12.57;
 
-                    // For kx-hv, we treat it as an hv scan where 'scan' axis is hv
-                    // We don't need a single fixed hv value
-
-                    console.log(`Converting to kx-hv... V0=${innerPot}, Phi=${workFunc}`);
-
                     const res = await fetch('/api/process/convert_k', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -411,7 +690,6 @@ class App {
                     }
 
                     const data = await res.json();
-                    console.log("Conversion complete, reloading:", data.filename);
 
                     // Update file path and load
                     this.selectedFilePath = data.filename;
@@ -448,8 +726,6 @@ class App {
                     const workFunc = parseFloat(this.ui.workFuncInput.value) || 4.5;
                     const innerPot = parseFloat(this.ui.innerPotInput.value) || 12.57;
 
-                    console.log(`Converting to kx-kz... V0=${innerPot}, Phi=${workFunc}`);
-
                     const res = await fetch('/api/process/convert_k', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -471,7 +747,6 @@ class App {
                     }
 
                     const data = await res.json();
-                    console.log("Conversion complete, reloading:", data.filename);
 
                     this.selectedFilePath = data.filename;
                     await this.loadSelectedFile();
@@ -679,7 +954,7 @@ class App {
             });
         }
 
-        const updateEnhancement = () => {
+        this.updateEnhancement = () => {
             const claheEnabled = this.ui.claheEnableCheck ? this.ui.claheEnableCheck.checked : false;
             const curvatureEnabled = this.ui.curvatureEnableCheck ? this.ui.curvatureEnableCheck.checked : false;
 
@@ -699,7 +974,6 @@ class App {
                 curvature: curvatureEnabled,
                 curvatureStrength: this.ui.curvatureSlider ? parseFloat(this.ui.curvatureSlider.value) : 1.0
             };
-            console.log("App.updateEnhancement:", opts);
             this.visualizer.setEnhancement(opts);
         };
 
@@ -748,29 +1022,28 @@ class App {
         // Note: Auto-align checkbox and re-detect button removed; use "Auto Set EF" in Convert controls.
 
         this.ui.smoothSlider.addEventListener('input', (e) => {
-            console.log("Smooth slider input:", e.target.value);
             if (this.ui.smoothVal) this.ui.smoothVal.textContent = e.target.value;
-            updateEnhancement();
+            this.updateEnhancement();
         });
 
         this.ui.sharpenSlider.addEventListener('input', (e) => {
             if (this.ui.sharpenVal) this.ui.sharpenVal.textContent = e.target.value;
-            updateEnhancement();
+            this.updateEnhancement();
         });
 
         this.ui.bgSlider.addEventListener('input', (e) => {
             if (this.ui.bgVal) this.ui.bgVal.textContent = e.target.value;
-            updateEnhancement();
+            this.updateEnhancement();
         });
 
         this.ui.claheEnableCheck.addEventListener('change', (e) => {
             this.ui.claheControls.style.display = e.target.checked ? 'block' : 'none';
-            updateEnhancement();
+            this.updateEnhancement();
         });
 
         this.ui.claheSlider.addEventListener('input', (e) => {
             this.ui.claheVal.textContent = e.target.value;
-            updateEnhancement();
+            this.updateEnhancement();
         });
 
         // Curvature controls
@@ -782,14 +1055,14 @@ class App {
                 if (this.ui.curvatureControls) {
                     this.ui.curvatureControls.style.display = e.target.checked ? 'block' : 'none';
                 }
-                updateEnhancement();
+                this.updateEnhancement();
             });
         }
 
         if (this.ui.curvatureSlider) {
             this.ui.curvatureSlider.addEventListener('input', (e) => {
                 if (this.ui.curvatureVal) this.ui.curvatureVal.textContent = e.target.value;
-                updateEnhancement();
+                this.updateEnhancement();
             });
         }
 
@@ -856,8 +1129,6 @@ class App {
                     // The backend handles the slice-by-fit logic.
                     // For 2D data or 3D without mapping, it behaves as a simple shift.
 
-                    console.log(`Aligning Energy. Offset=${ef}, HV Mapping=${hvMappingEnabled}`);
-
                     const alignRes = await fetch('/api/process/align', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -873,7 +1144,6 @@ class App {
 
                     if (alignRes.filename) {
                         // Reload with new file
-                        console.log("Alignment complete, reloading:", alignRes.filename);
                         this.selectedFilePath = alignRes.filename;
                         await this.loadSelectedFile({ keepSettings: true });
 
@@ -921,8 +1191,6 @@ class App {
                 try {
                     let currentPath = this.selectedFilePath;
 
-                    console.log(`Aligning Theta=${theta}, Scan=${scan}, HV_Mapping=${isHvMappingEnabled}...`);
-
                     // Unified Alignment Request
                     const res = await fetch('/api/process/align', {
                         method: 'POST',
@@ -947,7 +1215,6 @@ class App {
                     currentPath = data.filename;
 
                     // Reload
-                    console.log("Alignment complete, reloading:", currentPath);
                     this.selectedFilePath = currentPath;
                     await this.loadSelectedFile({ keepSettings: true });
 
@@ -1416,8 +1683,6 @@ class App {
             }
         }
 
-        console.log("Applying Server-Side Crop:", ranges);
-
         // UI State
         if (this.ui.confirmCropBtn) {
             this.ui.confirmCropBtn.disabled = true;
@@ -1440,7 +1705,6 @@ class App {
             }
 
             const data = await res.json();
-            console.log("Crop complete, reloading:", data.filename);
 
             // Exit local crop mode UI
             this.visualizer.exitCropMode();
@@ -1641,14 +1905,11 @@ class App {
             }
         }
 
-        console.log(`Normalized ${normalizedCount} scans. Each non-empty scan now sums to ${TARGET_INTENSITY}.`);
-
         // 3. Update Metadata Statistics
         // This is CRITICAL for colormap to work correctly, as min/max have changed.
         if (isFinite(newMin) && isFinite(newMax)) {
             this.originalMeta.data_info.min = newMin;
             this.originalMeta.data_info.max = newMax;
-            console.log(`Updated Metadata Stats: Min=${newMin}, Max=${newMax}`);
         }
 
         // Update display

@@ -13,11 +13,18 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import tempfile
 import xarray as xr
-
+from io import BytesIO
 # Add shared module to path for session manager
 _shared_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
 if _shared_path not in sys.path:
     sys.path.insert(0, _shared_path)
+
+try:
+    from brillouin_zone import generate_bz, load_from_parameters, load_from_material_id, plot_bz_matplotlib
+except ImportError as e:
+    import traceback
+    traceback.print_exc()
+    print(f"WARNING: Could not import brillouin_zone module: {e}")
 
 try:
     from session import read_session, clear_session
@@ -106,12 +113,11 @@ TEMP_FILES = []
 def cleanup_temp_files():
     """Clean up temporary files on shutdown."""
     for tmp in TEMP_FILES:
-        try:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-                print(f"Cleaned up temp file: {tmp}")
-        except Exception as e:
-            print(f"Failed to clean up {tmp}: {e}")
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except Exception as e:
+                print(f"Failed to clean up {tmp}: {e}")
 
 atexit.register(cleanup_temp_files)
 
@@ -386,16 +392,13 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print("="*60)
-        print("ERROR in /api/load endpoint:")
-        print(f"File path: {file_path}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error message: {str(e)}")
-        print("Full traceback:")
-        print(error_details)
-        print("="*60)
-        raise HTTPException(status_code=500, detail=str(e))
-
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(e),
+                "traceback": error_details 
+            }
+        )
 
 @app.get("/api/data")
 async def get_data(path: str = Query(..., description="Path to the file")):
@@ -432,16 +435,13 @@ async def get_data(path: str = Query(..., description="Path to the file")):
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print("="*60)
-        print("ERROR in /api/data endpoint:")
-        print(f"File path: {file_path}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error message: {str(e)}")
-        print("Full traceback:")
-        print(error_details)
-        print("="*60)
-        raise HTTPException(status_code=500, detail=str(e))
-
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(e),
+                "traceback": error_details
+            }
+        )
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -506,6 +506,17 @@ class CropRequest(BaseModel):
     path: str
     ranges: dict # {'x': [start, end], 'y': [start, end], 'z': [start, end]}
 
+class BZRequest(BaseModel):
+    method: str = "manual" # 'manual' or 'mp'
+    a: Optional[float] = None
+    b: Optional[float] = None
+    c: Optional[float] = None
+    alpha: Optional[float] = None
+    beta: Optional[float] = None
+    gamma: Optional[float] = None
+    mp_id: Optional[str] = None
+    crystal_name: Optional[str] = None
+
 @app.post("/api/process/align")
 async def align_data(request: AlignRequest):
     """Align data along an axis and return path to new file."""
@@ -540,8 +551,6 @@ async def align_data(request: AlignRequest):
             if data.ndim == 3 and request.hv_mapping_enabled:
                  if request.fit_range is None:
                      raise HTTPException(status_code=400, detail="fit_range is required for 3D HV mapping alignment")
-                 
-                 print(f"Performing 3D Fermi Surface Alignment (HV Mapping Enabled)")
                  
                  # 1. Fit Fermi Edge for each slice
                  # energy_window = (ef textbox - range, ef textbox + range)
@@ -618,15 +627,12 @@ async def align_data(request: AlignRequest):
                              elif 'tilt' in aligned.coords: scan_axis = 'tilt'
                          
                          if scan_axis in aligned.coords:
-                             print(f"Applying composite alignment: Adding Scan/Ky shift by {request.scan_offset}")
                              aligned = align_axis(
                                  aligned, 
                                  axis_name=scan_axis, 
                                  offset=request.scan_offset, 
                                  method=f"{request.method}_plus_scan"
                              )
-                         else:
-                             print(f"Warning: Scan axis '{scan_axis}' not found for composite alignment")
                 
                 # If hv_mapping_enabled is True, we ONLY aligned theta/kx above, which is correct.
             
@@ -655,7 +661,6 @@ async def align_data(request: AlignRequest):
             # Fallback: if h5netcdf fails, try scipy or just pickle? No, pickle is bad for interop.
             # Let's try native h5py if available, or just fail for now.
             # Actually, standard ARPES data in this project seems to be HDF5. 
-            print(f"Warning: standard save failed {e}, using h5py fallback")
             with h5py.File(save_path, 'w') as f:
                 ds = f.create_dataset('data', data=aligned.values)
                 # Save coords
@@ -750,9 +755,6 @@ async def convert_k(request: ConvertKRequest):
         if not isinstance(data, xr.DataArray):
              raise HTTPException(status_code=400, detail="Data must be xarray for conversion")
 
-        print(f"Converting to k-space. HV={request.hv}, V0={request.inner_potential}, Phi={request.work_function}")
-        print(f"Data ndim={data.ndim}, HV Mapping Enabled={request.hv_mapping_enabled}")
-
         # Call conversion logic
         # Logic:
         # 2D -> angle_to_k(data, hv=hv)
@@ -786,7 +788,6 @@ async def convert_k(request: ConvertKRequest):
         try:
             converted.to_netcdf(save_path, engine='h5netcdf')
         except Exception as e:
-            print(f"Warning: standard save failed {e}, using h5py fallback")
             with h5py.File(save_path, 'w') as f:
                 ds = f.create_dataset('data', data=converted.values)
                 for coord in converted.coords:
@@ -798,7 +799,135 @@ async def convert_k(request: ConvertKRequest):
                         f.attrs[k] = str(v)
                         
         return {"filename": save_path}
+
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+class BZRequest(BaseModel):
+    method: str = "manual" # 'manual' or 'mp'
+    a: Optional[float] = None
+    b: Optional[float] = None
+    c: Optional[float] = None
+    alpha: Optional[float] = None
+    beta: Optional[float] = None
+    gamma: Optional[float] = None
+    mp_id: Optional[str] = None
+    crystal_name: Optional[str] = None
+    theme: str = 'dark' # 'dark' or 'light'
+
+
+@app.post("/api/process/brillouin_zone")
+async def calculate_bz(request: BZRequest):
+    """Calculate and plot Brillouin Zone, returning an image."""
+    try:
+        if request.method == 'mp' and request.mp_id:
+            lattice = load_from_material_id(request.mp_id)
+        else:
+            # Defaults
+            a = request.a if request.a is not None else 3.5
+            b = request.b if request.b is not None else 3.5
+            c = request.c if request.c is not None else 3.5
+            alpha = request.alpha if request.alpha is not None else 90
+            beta = request.beta if request.beta is not None else 90
+            gamma = request.gamma if request.gamma is not None else 90
+            lattice = load_from_parameters(float(a), float(b), float(c), float(alpha), float(beta), float(gamma))
+            
+        bz = generate_bz(lattice)
         
+        # Determine colors based on theme
+        is_dark = request.theme == 'dark'
+        
+        if is_dark:
+            bg_color = '#121212'
+            text_color = 'white'
+            grid_color = '#444'
+            wireframe_color = 'white' # Reverting to white/cyan-ish for visibility against black
+        else:
+            bg_color = '#ffffff'
+            text_color = 'black'
+            grid_color = '#e0e0e0'
+            wireframe_color = 'black' # Black against white
+        
+        # Plot using Plotly
+        try:
+             # Check if plotly is available (it should be if we imported it)
+             # We need to import it here or at top. 
+             # bz_visualization handles imports, but we need to call plot_bz_plotly
+             # Let's import it from the shared module if available or just use the backend dispatcher
+             from brillouin_zone import plot_bz_plotly
+             import plotly.graph_objects as go
+             
+             title = request.crystal_name if request.crystal_name else None
+             
+             # Use cyan for faces in both, but adjust opacity? 
+             # Keeping cyan face with customized wireframe
+             fig = plot_bz_plotly(bz, title=title, facecolor='cyan', opacity=0.3, wireframe_color=wireframe_color)
+
+             # Customize for theme
+             layout_args = dict(
+                 paper_bgcolor=bg_color,
+                 plot_bgcolor=bg_color,
+                 font=dict(color=text_color),
+                 scene=dict(
+                     xaxis=dict(color=text_color, gridcolor=grid_color, backgroundcolor=bg_color),
+                     yaxis=dict(color=text_color, gridcolor=grid_color, backgroundcolor=bg_color),
+                     zaxis=dict(color=text_color, gridcolor=grid_color, backgroundcolor=bg_color),
+                     bgcolor=bg_color
+                 ),
+                 # Increase top margin slightly to accommodate title
+                 margin=dict(l=0, r=0, t=30, b=0),
+                 autosize=True
+             )
+             
+             # Explicitly position title to prevent clipping
+             if title:
+                 layout_args['title'] = dict(
+                     text=title,
+                     x=0.05,
+                     y=0.98, # Slightly lower than top edge
+                     xanchor='left',
+                     yanchor='top',
+                     font=dict(size=14, color=text_color)
+                 )
+                 
+             fig.update_layout(**layout_args)
+             
+             # Enhance layout for visibility
+             fig.update_layout(
+                 scene=dict(
+                     aspectmode='data'
+                 )
+             )
+             
+             return Response(content=fig.to_json(), media_type="application/json")
+        except Exception as e:
+            # Fallback to matplotlib if plotly fails for some reason
+            import matplotlib.pyplot as plt
+            # Ensure non-interactive backend for server
+            plt.switch_backend('Agg')
+            
+            title = request.crystal_name if request.crystal_name else None
+            fig, ax = plot_bz_matplotlib(bz, title=title, figsize=(6, 6))
+            
+            buf = BytesIO()
+            fig.patch.set_facecolor(bg_color) # Dark background
+            ax.set_facecolor(bg_color) # Dark axis
+            ax.xaxis.label.set_color(text_color)
+            ax.yaxis.label.set_color(text_color)
+            ax.zaxis.label.set_color(text_color)
+            ax.tick_params(colors=text_color)
+            if ax.title: ax.title.set_color(text_color)
+            
+            # Matplotlib doesn't have easy wireframe color override in this function yet, 
+            # but we prioritized Plotly.
+            
+            fig.savefig(buf, format='png', bbox_inches='tight', dpi=100, facecolor=bg_color)
+            buf.seek(0)
+            plt.close(fig)
+            return Response(content=buf.read(), media_type="image/png")
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -829,8 +958,6 @@ async def crop_endpoint(request: CropRequest):
         if not isinstance(data, xr.DataArray):
              raise HTTPException(status_code=400, detail="Data must be xarray for cropping")
 
-        print(f"Cropping data. Ranges={request.ranges}")
-
         # Call crop logic
         cropped = crop_data(data, request.ranges)
         
@@ -848,7 +975,6 @@ async def crop_endpoint(request: CropRequest):
         try:
             cropped.to_netcdf(save_path, engine='h5netcdf')
         except Exception as e:
-            print(f"Warning: standard save failed {e}, using h5py fallback")
             with h5py.File(save_path, 'w') as f:
                 ds = f.create_dataset('data', data=cropped.values)
                 for coord in cropped.coords:

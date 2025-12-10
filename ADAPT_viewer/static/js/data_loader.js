@@ -51,13 +51,11 @@ export class DataLoader {
             const response = await fetch(`${this.baseUrl}/session`);
             if (!response.ok) {
                 if (response.status === 404) {
-                    console.log("No active session found");
                     return null;
                 }
                 throw new Error(`Failed to load session: ${response.status}`);
             }
             const data = await response.json();
-            console.log("Session loaded:", data);
             return data;
         } catch (error) {
             console.warn("Session load error:", error.message);
