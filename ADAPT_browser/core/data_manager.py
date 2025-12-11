@@ -83,7 +83,9 @@ class DataManager(QObject):
         'h5': 'HDF5',
         'hdf5': 'HDF5', 
         'ibw': 'IBW',
-        'zip': 'ZIP'
+        'zip': 'ZIP',
+        'pxt': 'PXT',
+        'pxp': 'PXP'
     }
     
     def __init__(self, parent=None):
@@ -149,6 +151,10 @@ class DataManager(QObject):
         elif ext == 'zip':
             from loaders import load_ses
             da = load_ses(filepath)
+
+        elif ext in ('pxt', 'pxp'):
+            from loaders import load_pxt
+            da = load_pxt(filepath)
             
         else:
             raise ValueError(f"Unsupported file type: {ext}")
@@ -303,7 +309,8 @@ def filter_files_by_type(files: list, file_type: str) -> list:
     type_extensions = {
         'HDF5': ['h5', 'hdf5'],
         'IBW': ['ibw'],
-        'ZIP': ['zip']
+        'ZIP': ['zip'],
+        'PXT': ['pxt', 'pxp']
     }
     
     allowed = type_extensions.get(file_type, [])

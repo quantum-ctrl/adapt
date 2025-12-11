@@ -42,6 +42,7 @@ try:
     from loaders import load_adress as load_hdf5_data
     from loaders import load_ses as load_ses_zip
     from loaders import load_ibw
+    from loaders import load_pxt
 except ImportError as e:
     print(f"WARNING: Could not import loaders: {e}")
     # Fallback stubs if loaders are not available
@@ -50,6 +51,8 @@ except ImportError as e:
     def load_ses_zip(path):
         raise ImportError("Shared loaders not available")
     def load_ibw(path):
+        raise ImportError("Shared loaders not available")
+    def load_pxt(path):
         raise ImportError("Shared loaders not available")
 
     def load_ibw(path):
@@ -172,8 +175,8 @@ async def list_files():
         return {"files": []}
     
     # Search for .h5, .nxs, .hdf5 and .zip (SES archives)
-    # Search for .h5, .nxs, .hdf5, .zip (SES archives), and .ibw (Igor Binary Wave)
-    extensions = ['*.h5', '*.nxs', '*.hdf5', '*.zip', '*.ibw']
+    # Search for .h5, .nxs, .hdf5, .zip (SES archives), .ibw (Igor Binary Wave), and .pxt/.pxp
+    extensions = ['*.h5', '*.nxs', '*.hdf5', '*.zip', '*.ibw', '*.pxt', '*.pxp']
     files = set()
     for ext in extensions:
         # Use recursive search for all
@@ -215,7 +218,7 @@ async def browse_files(path: str = Query(None, description="Absolute path to bro
             full_path = os.path.join(path, item)
             if os.path.isdir(full_path):
                 dirs.append(item)
-            elif item.lower().endswith(('.h5', '.nxs', '.hdf5', '.ibw', '.zip')):
+            elif item.lower().endswith(('.h5', '.nxs', '.hdf5', '.ibw', '.zip', '.pxt', '.pxp')):
                 files.append(item)
         
         return {
@@ -248,6 +251,8 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
             result = load_ses_zip(file_path)
         elif ext == '.ibw':
             result = load_ibw(file_path)
+        elif ext in ('.pxt', '.pxp'):
+            result = load_pxt(file_path)
         else:
             result = load_hdf5_data(file_path)
 
@@ -419,6 +424,8 @@ async def get_data(path: str = Query(..., description="Path to the file")):
             result = load_ses_zip(file_path)
         elif ext == '.ibw':
             result = load_ibw(file_path)
+        elif ext in ('.pxt', '.pxp'):
+             result = load_pxt(file_path)
         else:
             result = load_hdf5_data(file_path)
 
@@ -538,6 +545,8 @@ async def align_data(request: AlignRequest):
             data = load_ibw(file_path)
         elif ext == '.zip':
              data = load_ses_zip(file_path)
+        elif ext in ('.pxt', '.pxp'):
+             data = load_pxt(file_path)
         else:
              raise HTTPException(status_code=400, detail="Unsupported file type for processing")
 
@@ -694,6 +703,8 @@ async def fit_fermi_edge_endpoint(request: FitFermiRequest):
             data = load_hdf5_data(file_path)
         elif ext == '.ibw':
             data = load_ibw(file_path)
+        elif ext in ('.pxt', '.pxp'):
+            data = load_pxt(file_path)
         else:
              raise HTTPException(status_code=400, detail="Unsupported file type")
              
@@ -749,6 +760,8 @@ async def convert_k(request: ConvertKRequest):
             data = load_ibw(file_path)
         elif ext == '.zip':
              data = load_ses_zip(file_path)
+        elif ext in ('.pxt', '.pxp'):
+             data = load_pxt(file_path)
         else:
              raise HTTPException(status_code=400, detail="Unsupported file type for processing")
 

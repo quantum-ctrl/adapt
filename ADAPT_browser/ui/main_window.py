@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
         
         # File filter dropdown
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["All", "HDF5", "IBW", "ZIP"])
+        self.filter_combo.addItems(["All", "HDF5", "IBW", "ZIP", "PXT"])
         self.filter_combo.currentTextChanged.connect(self._on_filter_changed)
         toolbar.addWidget(self.filter_combo)
         
