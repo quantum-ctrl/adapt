@@ -8,6 +8,9 @@ ADAPT is a comprehensive toolkit designed for the visualization and analysis of 
 *   **3D Viewer (Web)**: An interactive web-based 3D visualizer for exploring volumetric ARPES data (EDC, MDC, isoline cuts).
 *   **Integrated Workflow**: Seamlessly switch between the browser and the 3D viewer.
 *   **Data Support**: Supports standard ARPES data formats (HDF5, Igor Binary Wave).
+*   **Brillouin Zone Visualization**: 
+    *   3D construction from lattice parameters or Materials Project ID.
+    *   Interactive intersection plane visualization (Miller indices, distance, custom color).
 
 ### Installation
 

@@ -370,6 +370,22 @@
                         </div>
                     </div>
 
+                    <!-- Intersection Plane (Optional) -->
+                    <div class="control-group-title" style="margin-top: 15px;">Intersection Plane (Optional)</div>
+                    <div class="input-row" style="margin-bottom: 5px;">
+                        <label>Miller (h,k,l)</label>
+                        <input type="text" id="bz-plane-miller" placeholder="1, 1, 0" style="width: 100px;">
+                    </div>
+                    <div class="input-row" style="margin-bottom: 5px;">
+                        <label>Distance</label>
+                        <input type="number" id="bz-plane-distance" value="0" step="0.1" style="width: 80px;">
+                    </div>
+                    <div class="input-row" style="margin-bottom: 8px;">
+                        <label>Plane Color</label>
+                        <input type="color" id="bz-plane-color" value="#00ff00"
+                            style="width: 50px; height: 25px; padding: 0; border: none; cursor: pointer;">
+                    </div>
+
                     <div class="control-group-title" style="margin-top: 15px; margin-bottom: 10px;">CALCULATE BZ</div>
                     <button id="bz-calculate-btn" class="primary-btn" style="width: 100%;">Calculate BZ</button>
                 </div>

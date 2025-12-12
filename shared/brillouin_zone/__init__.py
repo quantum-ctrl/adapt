@@ -54,6 +54,7 @@ from .bz_geometry import (
     wigner_seitz_cell,
     get_high_symmetry_points,
     get_high_symmetry_path,
+    get_bz_intersection_plane,
 )
 
 from .bz_visualization import (
@@ -101,6 +102,7 @@ __all__ = [
     'wigner_seitz_cell',
     'get_high_symmetry_points',
     'get_high_symmetry_path',
+    'get_bz_intersection_plane',
     # Visualization
     'plot_bz',
     'plot_bz_matplotlib',

@@ -505,6 +505,89 @@ def generate_bz(lattice: CrystalLattice,
     )
 
 
+def get_bz_intersection_plane(bz: 'BrillouinZone', 
+                             plane_normal: List[float], 
+                             slice_value: float = 0.0) -> Optional[np.ndarray]:
+    """
+    Compute the 3D polygon formed by the intersection of the BZ with a plane.
+    
+    Parameters
+    ----------
+    bz : BrillouinZone
+        Brillouin Zone object
+    plane_normal : array-like
+        Normal vector of the plane (e.g., Miller indices [h, k, l])
+    slice_value : float
+        Distance from origin (plane eq: normal · r = slice_value)
+        
+    Returns
+    -------
+    np.ndarray or None
+        Vertices of the intersection polygon in 3D, shape (N, 3).
+        Returns None if no intersection.
+    """
+    vertices = bz.vertices
+    normal = np.array(plane_normal)
+    norm_mag = np.linalg.norm(normal)
+    if norm_mag < 1e-10:
+        return None
+    normal = normal / norm_mag
+    
+    intersection_points = []
+    
+    # Iterate over all faces (triangles)
+    for face in bz.faces:
+        v0, v1, v2 = vertices[face]
+        # Edges of the triangle
+        edges = [(v0, v1), (v1, v2), (v2, v0)]
+        for p1, p2 in edges:
+            d1 = np.dot(p1, normal) - slice_value
+            d2 = np.dot(p2, normal) - slice_value
+            
+            # Check for intersection (signs differ)
+            if d1 * d2 < 0:
+                # Linear interpolation
+                t = d1 / (d1 - d2)
+                intersection = p1 + t * (p2 - p1)
+                intersection_points.append(intersection)
+            elif np.abs(d1) < 1e-9:
+                # Vertex lies on plane (rare exact float match)
+                intersection_points.append(p1)
+    
+    if len(intersection_points) < 3:
+        return None
+        
+    points = np.array(intersection_points)
+    
+    # Remove duplicates
+    unique_points = []
+    for pt in points:
+        if not any(np.linalg.norm(pt - upt) < 1e-6 for upt in unique_points):
+            unique_points.append(pt)
+    points = np.array(unique_points)
+    
+    if len(points) < 3:
+        return None
+
+    # Sort points to form a convex polygon
+    # Project to 2D basis on the plane
+    if np.abs(normal[0]) < 0.9:
+        u = np.cross(normal, [1, 0, 0])
+    else:
+        u = np.cross(normal, [0, 1, 0])
+    u /= np.linalg.norm(u)
+    v = np.cross(normal, u)
+    
+    coords_2d = points @ np.column_stack((u, v))
+    
+    try:
+        hull = ConvexHull(coords_2d)
+        sorted_points = points[hull.vertices]
+        return sorted_points
+    except Exception:
+        return points
+
+
 # Public API
 __all__ = [
     'BrillouinZone',
@@ -512,4 +595,5 @@ __all__ = [
     'wigner_seitz_cell',
     'get_high_symmetry_points',
     'get_high_symmetry_path',
+    'get_bz_intersection_plane',
 ]

@@ -419,6 +419,21 @@ class App {
                 const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
                 payload.theme = currentTheme;
 
+                // Read intersection plane parameters (optional)
+                const millerInput = document.getElementById('bz-plane-miller');
+                const distanceInput = document.getElementById('bz-plane-distance');
+                const colorInput = document.getElementById('bz-plane-color');
+
+                if (millerInput && millerInput.value.trim()) {
+                    const millerStr = millerInput.value.trim();
+                    const millerParts = millerStr.split(',').map(s => parseFloat(s.trim()));
+                    if (millerParts.length === 3 && !millerParts.some(isNaN)) {
+                        payload.plane_miller = millerParts;
+                        payload.plane_distance = distanceInput ? parseFloat(distanceInput.value) || 0.0 : 0.0;
+                        payload.plane_color = colorInput ? colorInput.value : '#00ff00';
+                    }
+                }
+
                 try {
                     this.ui.bzCalculateBtn.disabled = true;
                     this.ui.bzCalculateBtn.textContent = "Calculating...";

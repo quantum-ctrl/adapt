@@ -20,7 +20,7 @@ if _shared_path not in sys.path:
     sys.path.insert(0, _shared_path)
 
 try:
-    from brillouin_zone import generate_bz, load_from_parameters, load_from_material_id, plot_bz_matplotlib
+    from brillouin_zone import generate_bz, load_from_parameters, load_from_material_id, plot_bz_matplotlib, get_bz_intersection_plane
 except ImportError as e:
     import traceback
     traceback.print_exc()
@@ -797,6 +797,10 @@ class BZRequest(BaseModel):
     mp_id: Optional[str] = None
     crystal_name: Optional[str] = None
     theme: str = 'dark' # 'dark' or 'light'
+    # Optional intersection plane parameters
+    plane_miller: Optional[List[float]] = None  # Miller indices [h, k, l]
+    plane_distance: Optional[float] = 0.0  # Distance from origin
+    plane_color: Optional[str] = 'green'  # Color for intersection plane
 
 
 @app.post("/api/process/brillouin_zone")
@@ -881,6 +885,58 @@ async def calculate_bz(request: BZRequest):
                      aspectmode='data'
                  )
              )
+             
+             # Add intersection plane if Miller indices provided
+             if request.plane_miller and len(request.plane_miller) == 3:
+                 try:
+                     plane_distance = request.plane_distance if request.plane_distance is not None else 0.0
+                     intersection_points = get_bz_intersection_plane(bz, request.plane_miller, plane_distance)
+                     
+                     if intersection_points is not None and len(intersection_points) >= 3:
+                         # Create a filled polygon using Mesh3d
+                         # For a convex polygon, we can use a simple fan triangulation
+                         n = len(intersection_points)
+                         # Fan triangulation: all triangles share vertex 0
+                         i_indices = [0] * (n - 2)
+                         j_indices = list(range(1, n - 1))
+                         k_indices = list(range(2, n))
+                         
+                         plane_color = request.plane_color if request.plane_color else 'green'
+                         
+                         # Create filled polygon using Mesh3d with proper settings
+                         plane_trace = go.Mesh3d(
+                             x=intersection_points[:, 0].tolist(),
+                             y=intersection_points[:, 1].tolist(),
+                             z=intersection_points[:, 2].tolist(),
+                             i=i_indices,
+                             j=j_indices,
+                             k=k_indices,
+                             color=plane_color,
+                             opacity=0.6,
+                             flatshading=True,
+                             lighting=dict(ambient=0.8, diffuse=0.5),
+                             name=f"Plane ({int(request.plane_miller[0])},{int(request.plane_miller[1])},{int(request.plane_miller[2])})"
+                         )
+                         fig.add_trace(plane_trace)
+                         
+                         # Also add edge outline for clarity
+                         # Close the polygon by repeating the first point
+                         closed_points = list(intersection_points) + [intersection_points[0]]
+                         # Use a darker shade for edge - for common colors, use 'dark' prefix
+                         edge_color = f'dark{plane_color}' if plane_color in ['red', 'green', 'blue', 'cyan', 'magenta', 'orange'] else plane_color
+                         edge_trace = go.Scatter3d(
+                             x=[p[0] for p in closed_points],
+                             y=[p[1] for p in closed_points],
+                             z=[p[2] for p in closed_points],
+                             mode='lines',
+                             line=dict(color=edge_color, width=4),
+                             name='Plane Edge',
+                             showlegend=False
+                         )
+                         fig.add_trace(edge_trace)
+                 except Exception as plane_error:
+                     # Log but don't fail the entire request
+                     print(f"Warning: Could not render intersection plane: {plane_error}")
              
              return Response(content=fig.to_json(), media_type="application/json")
         except Exception as e:
