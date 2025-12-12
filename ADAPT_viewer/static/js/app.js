@@ -438,6 +438,25 @@ class App {
                     this.ui.bzCalculateBtn.disabled = true;
                     this.ui.bzCalculateBtn.textContent = "Calculating...";
 
+                    // Store BZ params for dynamic plane updates (exclude theme and plane params)
+                    this.bzParams = {
+                        method: payload.method,
+                        a: payload.a,
+                        b: payload.b,
+                        c: payload.c,
+                        alpha: payload.alpha,
+                        beta: payload.beta,
+                        gamma: payload.gamma,
+                        mp_id: payload.mp_id
+                    };
+
+                    // Sync slider with input value
+                    const distanceSlider = document.getElementById('bz-plane-distance-slider');
+                    const distanceInput = document.getElementById('bz-plane-distance');
+                    if (distanceSlider && distanceInput) {
+                        distanceSlider.value = parseFloat(distanceInput.value) || 0;
+                    }
+
 
                     const res = await fetch('/api/process/brillouin_zone', {
                         method: 'POST',
@@ -507,6 +526,34 @@ class App {
                     this.ui.bzCalculateBtn.disabled = false;
                     this.ui.bzCalculateBtn.textContent = "Calculate BZ";
                 }
+            });
+        }
+
+        // BZ Intersection Plane Distance Slider Sync
+        const bzDistanceSlider = document.getElementById('bz-plane-distance-slider');
+        const bzDistanceInput = document.getElementById('bz-plane-distance');
+        const bzDistanceVal = document.getElementById('bz-plane-distance-val');
+
+        // Store BZ parameters for plane updates
+        this.bzParams = null;
+
+        if (bzDistanceSlider && bzDistanceInput) {
+            // Sync slider -> input
+            bzDistanceSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                bzDistanceInput.value = val.toFixed(2);
+                if (bzDistanceVal) bzDistanceVal.textContent = val.toFixed(2);
+                this.updateIntersectionPlane(val);
+            });
+
+            // Sync input -> slider
+            bzDistanceInput.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value) || 0;
+                // Clamp to slider range
+                const clamped = Math.max(-3.14159, Math.min(3.14159, val));
+                bzDistanceSlider.value = clamped;
+                if (bzDistanceVal) bzDistanceVal.textContent = clamped.toFixed(2);
+                this.updateIntersectionPlane(clamped);
             });
         }
 
@@ -2053,6 +2100,81 @@ class App {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    /**
+     * Update intersection plane dynamically without recalculating BZ.
+     * Only updates the plane traces in the existing Plotly figure.
+     */
+    async updateIntersectionPlane(distance) {
+        // Check if BZ parameters are available
+        if (!this.bzParams) {
+            console.warn("BZ not calculated yet, cannot update plane");
+            return;
+        }
+
+        // Check if Miller indices are specified
+        const millerInput = document.getElementById('bz-plane-miller');
+        if (!millerInput || !millerInput.value.trim()) {
+            return; // No plane configured
+        }
+
+        const millerStr = millerInput.value.trim();
+        const millerParts = millerStr.split(',').map(s => parseFloat(s.trim()));
+        if (millerParts.length !== 3 || millerParts.some(isNaN)) {
+            return; // Invalid miller indices
+        }
+
+        const colorInput = document.getElementById('bz-plane-color');
+        const planeColor = colorInput ? colorInput.value : '#00ff00';
+
+        try {
+            const payload = {
+                ...this.bzParams,
+                plane_miller: millerParts,
+                plane_distance: distance,
+                plane_color: planeColor
+            };
+
+            const res = await fetch('/api/process/update_intersection_plane', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                console.warn("Plane update failed:", err.detail);
+                return;
+            }
+
+            const data = await res.json();
+
+            // Update Plotly figure - remove old plane traces and add new ones
+            const plotlyDivId = 'bz-plotly-div';
+            const plotlyDiv = document.getElementById(plotlyDivId);
+
+            if (plotlyDiv && window.Plotly) {
+                // Get current figure data
+                const currentData = plotlyDiv.data || [];
+
+                // Filter out old plane traces (keep BZ mesh/lines)
+                // Plane traces have names starting with "Plane" or "Plane Edge"
+                const filteredData = currentData.filter(trace =>
+                    !trace.name || (!trace.name.startsWith('Plane') && trace.name !== 'Plane Edge')
+                );
+
+                // Add new traces
+                if (data.traces && data.traces.length > 0) {
+                    filteredData.push(...data.traces);
+                }
+
+                // Re-render with new data, keeping layout
+                Plotly.react(plotlyDivId, filteredData, plotlyDiv.layout);
+            }
+        } catch (e) {
+            console.error("Plane update error:", e);
+        }
     }
 }
 

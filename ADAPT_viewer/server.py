@@ -969,6 +969,89 @@ async def calculate_bz(request: BZRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+class UpdatePlaneRequest(BaseModel):
+    method: str = "manual"
+    a: Optional[float] = None
+    b: Optional[float] = None
+    c: Optional[float] = None
+    alpha: Optional[float] = None
+    beta: Optional[float] = None
+    gamma: Optional[float] = None
+    mp_id: Optional[str] = None
+    plane_miller: List[float]
+    plane_distance: float = 0.0
+    plane_color: Optional[str] = 'green'
+
+@app.post("/api/process/update_intersection_plane")
+async def update_intersection_plane(request: UpdatePlaneRequest):
+    """Update intersection plane only, returning new plane traces for Plotly."""
+    try:
+        import plotly.graph_objects as go
+        
+        # Regenerate BZ from cached parameters
+        if request.method == 'mp' and request.mp_id:
+            lattice = load_from_material_id(request.mp_id)
+        else:
+            a = request.a if request.a is not None else 3.5
+            b = request.b if request.b is not None else 3.5
+            c = request.c if request.c is not None else 3.5
+            alpha = request.alpha if request.alpha is not None else 90
+            beta = request.beta if request.beta is not None else 90
+            gamma = request.gamma if request.gamma is not None else 90
+            lattice = load_from_parameters(float(a), float(b), float(c), float(alpha), float(beta), float(gamma))
+        
+        bz = generate_bz(lattice)
+        
+        # Calculate intersection plane
+        intersection_points = get_bz_intersection_plane(bz, request.plane_miller, request.plane_distance)
+        
+        if intersection_points is None or len(intersection_points) < 3:
+            return {"traces": [], "message": "No valid intersection at this distance"}
+        
+        # Create plane trace
+        n = len(intersection_points)
+        i_indices = [0] * (n - 2)
+        j_indices = list(range(1, n - 1))
+        k_indices = list(range(2, n))
+        
+        plane_color = request.plane_color if request.plane_color else 'green'
+        
+        plane_trace = {
+            "type": "mesh3d",
+            "x": intersection_points[:, 0].tolist(),
+            "y": intersection_points[:, 1].tolist(),
+            "z": intersection_points[:, 2].tolist(),
+            "i": i_indices,
+            "j": j_indices,
+            "k": k_indices,
+            "color": plane_color,
+            "opacity": 0.6,
+            "flatshading": True,
+            "lighting": {"ambient": 0.8, "diffuse": 0.5},
+            "name": f"Plane ({int(request.plane_miller[0])},{int(request.plane_miller[1])},{int(request.plane_miller[2])})"
+        }
+        
+        # Also add edge outline
+        closed_points = list(intersection_points) + [intersection_points[0]]
+        edge_color = f'dark{plane_color}' if plane_color in ['red', 'green', 'blue', 'cyan', 'magenta', 'orange'] else plane_color
+        edge_trace = {
+            "type": "scatter3d",
+            "x": [p[0] for p in closed_points],
+            "y": [p[1] for p in closed_points],
+            "z": [p[2] for p in closed_points],
+            "mode": "lines",
+            "line": {"color": edge_color, "width": 4},
+            "name": "Plane Edge",
+            "showlegend": False
+        }
+        
+        return {"traces": [plane_trace, edge_trace]}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/process/crop")
 async def crop_endpoint(request: CropRequest):
     """Crop data and return path to new file."""
