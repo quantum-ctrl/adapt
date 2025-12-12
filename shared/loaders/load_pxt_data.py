@@ -83,7 +83,7 @@ def load(path: str) -> xr.DataArray:
              try:
                  data = ibw.load(path)
                  wave = data['wave']
-             except:
+             except (IOError, ValueError, KeyError):
                  raise IOError(f"Failed to load file with igor2: {e}")
 
     w_data = wave['wData']

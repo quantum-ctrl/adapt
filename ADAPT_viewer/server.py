@@ -55,9 +55,6 @@ except ImportError as e:
     def load_pxt(path):
         raise ImportError("Shared loaders not available")
 
-    def load_ibw(path):
-        raise ImportError("Shared loaders not available")
-
 # Import Processing Modules with granular error handling
 align_error = None
 fermi_fit_error = None
@@ -123,6 +120,33 @@ def cleanup_temp_files():
                 print(f"Failed to clean up {tmp}: {e}")
 
 atexit.register(cleanup_temp_files)
+
+
+def _load_data_file(file_path: str):
+    """
+    Load a data file using the appropriate loader based on file extension.
+    
+    Args:
+        file_path: Absolute path to the data file
+        
+    Returns:
+        xarray.DataArray or dict with data
+        
+    Raises:
+        HTTPException: If file type is not supported
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    
+    if ext in ('.h5', '.nxs', '.hdf5'):
+        return load_hdf5_data(file_path)
+    elif ext == '.ibw':
+        return load_ibw(file_path)
+    elif ext == '.zip':
+        return load_ses_zip(file_path)
+    elif ext in ('.pxt', '.pxp'):
+        return load_pxt(file_path)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
 
 @app.get("/api/session")
@@ -245,16 +269,8 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
         raise HTTPException(status_code=404, detail="File not found")
     
     try:
-        # Load data using the appropriate loader (may return xarray.DataArray)
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.zip':
-            result = load_ses_zip(file_path)
-        elif ext == '.ibw':
-            result = load_ibw(file_path)
-        elif ext in ('.pxt', '.pxp'):
-            result = load_pxt(file_path)
-        else:
-            result = load_hdf5_data(file_path)
+        # Load data using the centralized loader
+        result = _load_data_file(file_path)
 
         if isinstance(result, xr.DataArray):
             da = result
@@ -418,16 +434,8 @@ async def get_data(path: str = Query(..., description="Path to the file")):
         raise HTTPException(status_code=404, detail="File not found")
     
     try:
-        # Choose loader based on extension
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.zip':
-            result = load_ses_zip(file_path)
-        elif ext == '.ibw':
-            result = load_ibw(file_path)
-        elif ext in ('.pxt', '.pxp'):
-             result = load_pxt(file_path)
-        else:
-            result = load_hdf5_data(file_path)
+        # Load data using the centralized loader
+        result = _load_data_file(file_path)
 
         if isinstance(result, xr.DataArray):
             data = result.values
@@ -513,17 +521,6 @@ class CropRequest(BaseModel):
     path: str
     ranges: dict # {'x': [start, end], 'y': [start, end], 'z': [start, end]}
 
-class BZRequest(BaseModel):
-    method: str = "manual" # 'manual' or 'mp'
-    a: Optional[float] = None
-    b: Optional[float] = None
-    c: Optional[float] = None
-    alpha: Optional[float] = None
-    beta: Optional[float] = None
-    gamma: Optional[float] = None
-    mp_id: Optional[str] = None
-    crystal_name: Optional[str] = None
-
 @app.post("/api/process/align")
 async def align_data(request: AlignRequest):
     """Align data along an axis and return path to new file."""
@@ -535,20 +532,8 @@ async def align_data(request: AlignRequest):
         raise HTTPException(status_code=404, detail="File not found")
         
     try:
-        # Load data
-        # Use simple loader for speed if possible, but we need xarray
-        # Re-use load_metadata logic implicitly by using shared loaders directly
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.h5' or ext == '.nxs' or ext == '.hdf5':
-            data = load_hdf5_data(file_path)
-        elif ext == '.ibw':
-            data = load_ibw(file_path)
-        elif ext == '.zip':
-             data = load_ses_zip(file_path)
-        elif ext in ('.pxt', '.pxp'):
-             data = load_pxt(file_path)
-        else:
-             raise HTTPException(status_code=400, detail="Unsupported file type for processing")
+        # Load data using centralized loader
+        data = _load_data_file(file_path)
 
         if not isinstance(data, xr.DataArray):
              raise HTTPException(status_code=400, detail="Data must be xarray for alignment")
@@ -679,7 +664,7 @@ async def align_data(request: AlignRequest):
                 for k, v in aligned.attrs.items():
                     try:
                         f.attrs[k] = v
-                    except:
+                    except (TypeError, ValueError, OSError):
                         f.attrs[k] = str(v)
                         
         return {"filename": save_path}
@@ -697,16 +682,8 @@ async def fit_fermi_edge_endpoint(request: FitFermiRequest):
         file_path = os.path.join(DATA_DIR, file_path)
         
     try:
-        # Load
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.h5' or ext == '.nxs':
-            data = load_hdf5_data(file_path)
-        elif ext == '.ibw':
-            data = load_ibw(file_path)
-        elif ext in ('.pxt', '.pxp'):
-            data = load_pxt(file_path)
-        else:
-             raise HTTPException(status_code=400, detail="Unsupported file type")
+        # Load data using centralized loader
+        data = _load_data_file(file_path)
              
         if not isinstance(data, xr.DataArray):
              raise HTTPException(status_code=400, detail="Data must be xarray")
@@ -752,18 +729,8 @@ async def convert_k(request: ConvertKRequest):
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        # Load data
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.h5' or ext == '.nxs' or ext == '.hdf5':
-            data = load_hdf5_data(file_path)
-        elif ext == '.ibw':
-            data = load_ibw(file_path)
-        elif ext == '.zip':
-             data = load_ses_zip(file_path)
-        elif ext in ('.pxt', '.pxp'):
-             data = load_pxt(file_path)
-        else:
-             raise HTTPException(status_code=400, detail="Unsupported file type for processing")
+        # Load data using centralized loader
+        data = _load_data_file(file_path)
 
         if not isinstance(data, xr.DataArray):
              raise HTTPException(status_code=400, detail="Data must be xarray for conversion")
@@ -808,7 +775,7 @@ async def convert_k(request: ConvertKRequest):
                 for k, v in converted.attrs.items():
                     try:
                         f.attrs[k] = v
-                    except:
+                    except (TypeError, ValueError, OSError):
                         f.attrs[k] = str(v)
                         
         return {"filename": save_path}
@@ -957,16 +924,8 @@ async def crop_endpoint(request: CropRequest):
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        # Load data
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == '.h5' or ext == '.nxs' or ext == '.hdf5':
-            data = load_hdf5_data(file_path)
-        elif ext == '.ibw':
-            data = load_ibw(file_path)
-        elif ext == '.zip':
-             data = load_ses_zip(file_path)
-        else:
-             raise HTTPException(status_code=400, detail="Unsupported file type for processing")
+        # Load data using centralized loader
+        data = _load_data_file(file_path)
 
         if not isinstance(data, xr.DataArray):
              raise HTTPException(status_code=400, detail="Data must be xarray for cropping")
@@ -995,7 +954,7 @@ async def crop_endpoint(request: CropRequest):
                 for k, v in cropped.attrs.items():
                     try:
                         f.attrs[k] = v
-                    except:
+                    except (TypeError, ValueError, OSError):
                         f.attrs[k] = str(v)
                         
         return {"filename": save_path}

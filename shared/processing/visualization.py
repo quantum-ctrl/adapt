@@ -13,11 +13,21 @@ Usage:
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.figure
+import xarray as xr
+from typing import Optional, Tuple, Union
 
 
-def plot_3d_data(data, title_prefix="", figsize=(15, 4), cmap='bone_r', 
-                  use_kz_coords=False, crosshair_pos=None, slice_pos=None,
-                  interactive=True):
+def plot_3d_data(
+    data: xr.DataArray,
+    title_prefix: str = "",
+    figsize: Tuple[int, int] = (15, 4),
+    cmap: str = 'bone_r',
+    use_kz_coords: bool = False,
+    crosshair_pos: Optional[Tuple[float, float, float]] = None,
+    slice_pos: Optional[Tuple[float, float, float]] = None,
+    interactive: bool = True
+) -> matplotlib.figure.Figure:
     """
     Plot 3 orthogonal views of 3D data.
     

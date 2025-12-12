@@ -55,8 +55,8 @@ def is_valid_data_file(path: str) -> bool:
     if not os.path.isfile(path):
         return False
     
-    # Supported extensions
-    supported = {".h5", ".hdf5", ".nxs", ".ibw", ".zip"}
+    # Supported extensions (matching loaders in shared/loaders/)
+    supported = {".h5", ".hdf5", ".nxs", ".ibw", ".zip", ".pxt", ".pxp"}
     ext = os.path.splitext(path)[1].lower()
     return ext in supported
 

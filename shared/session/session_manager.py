@@ -2,8 +2,8 @@
 Session Manager - Manages session state between ADAPT Browser and ADAPT Viewer.
 
 This module provides functionality to write and read session data stored in
-~/.adapt/session.json. It enables the Browser to pass file paths and metadata
-to the Viewer for seamless cross-application data transfer.
+the project's .adapt_temp directory. It enables the Browser to pass file paths 
+and metadata to the Viewer for seamless cross-application data transfer.
 """
 
 import json
@@ -16,8 +16,35 @@ from typing import Any, Optional
 # Configure module logger
 logger = logging.getLogger(__name__)
 
-# Default session file location
-SESSION_DIR = Path("/Users/mengyu/Desktop/git/ADAPT/.adapt_temp")
+
+def _get_session_dir() -> Path:
+    """
+    Get the session directory, located relative to the project root.
+    
+    Attempts to find the ADAPT project root by traversing up from this file's
+    location. Falls back to ~/.adapt if the project root cannot be determined.
+    
+    Returns:
+        Path to the session directory (.adapt_temp within project or ~/.adapt)
+    """
+    # Start from this file's location
+    current = Path(__file__).resolve().parent
+    
+    # Traverse up to find project root (contains ADAPT_browser or shared at top level)
+    while current != current.parent:
+        # Check for known project markers
+        if (current / "ADAPT_browser").exists() and (current / "shared").exists():
+            session_dir = current / ".adapt_temp"
+            return session_dir
+        current = current.parent
+    
+    # Fallback to user home directory if project root not found
+    logger.debug("Project root not found, using ~/.adapt for session storage")
+    return Path.home() / ".adapt"
+
+
+# Session directory and file paths
+SESSION_DIR = _get_session_dir()
 SESSION_FILE = SESSION_DIR / "session.json"
 
 
@@ -26,7 +53,7 @@ def get_session_path() -> Path:
     Get the path to the session file.
     
     Returns:
-        Path to ~/.adapt/session.json
+        Path to session.json within the session directory
     """
     return SESSION_FILE
 

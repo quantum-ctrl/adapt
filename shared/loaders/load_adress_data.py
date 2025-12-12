@@ -229,9 +229,9 @@ def load(path: str) -> xr.DataArray:
                                     note = ''.join(str(x) for x in arr.ravel())
                             else:
                                 note = str(arr)
-                        except:
+                        except (UnicodeDecodeError, TypeError, AttributeError):
                             note = str(arr)
-            except:
+            except (KeyError, ValueError, TypeError):
                 pass
 
         # 2c: check dataset attributes for IGOR-like note fields (e.g., IGORWaveNote)

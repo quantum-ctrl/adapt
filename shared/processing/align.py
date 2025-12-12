@@ -22,9 +22,16 @@ Usage:
 import numpy as np
 import xarray as xr
 from datetime import datetime
+from typing import Optional, Dict, Any
 
 
-def align_axis(data, axis_name, offset, new_name=None, method='manual'):
+def align_axis(
+    data: xr.DataArray,
+    axis_name: str,
+    offset: float,
+    new_name: Optional[str] = None,
+    method: str = 'manual'
+) -> xr.DataArray:
     """
     Align an axis by applying an offset.
     
@@ -81,7 +88,13 @@ def align_axis(data, axis_name, offset, new_name=None, method='manual'):
     return new_data
 
 
-def _update_alignment_metadata(data, axis_name, offset, new_name, method):
+def _update_alignment_metadata(
+    data: xr.DataArray,
+    axis_name: str,
+    offset: float,
+    new_name: Optional[str],
+    method: str
+) -> xr.DataArray:
     """Update the alignment history in data attributes."""
     # Get existing alignment info or create new
     alignment = dict(data.attrs.get('alignment', {}))
@@ -105,7 +118,11 @@ def _update_alignment_metadata(data, axis_name, offset, new_name, method):
     return data
 
 
-def align_energy(data, E_F, energy_axis='energy'):
+def align_energy(
+    data: xr.DataArray,
+    E_F: float,
+    energy_axis: str = 'energy'
+) -> xr.DataArray:
     """
     Align energy axis so that the Fermi level is at zero.
     

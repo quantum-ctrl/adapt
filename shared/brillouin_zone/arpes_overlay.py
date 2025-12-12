@@ -36,10 +36,16 @@ except ImportError:
 
 from .bz_geometry import BrillouinZone
 
+# Import ARPES constant from centralized location
+try:
+    from shared.utils.constants import K_FACTOR
+except ImportError:
+    # Fallback for standalone usage
+    K_FACTOR = 0.5123  # Å⁻¹ / sqrt(eV)
 
-# ARPES constant: k = K_FACTOR * sqrt(Ek) * sin(theta)
+# ARPES constant documentation:
+# k = K_FACTOR * sqrt(Ek) * sin(theta)
 # where Ek is kinetic energy in eV, theta in radians, result in Å⁻¹
-K_FACTOR = 0.5123  # Å⁻¹ / sqrt(eV)
 
 
 def angle_to_k(theta: np.ndarray, Ek: float) -> np.ndarray:

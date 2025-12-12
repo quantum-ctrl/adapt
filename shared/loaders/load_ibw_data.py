@@ -69,7 +69,7 @@ def load(path: str) -> xr.DataArray:
     try:
         mtime = os.path.getmtime(path)
         attrs["TimeStamp"] = datetime.fromtimestamp(mtime).isoformat()
-    except:
+    except (OSError, ValueError):
         pass
 
     # Parse Note

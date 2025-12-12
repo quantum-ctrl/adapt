@@ -8,10 +8,16 @@ properly handling the energy-dependent momentum calculation for each binding ene
 import numpy as np
 import xarray as xr
 
-# Physical constants and conversion factor
+# Import the ARPES constant from centralized location
+try:
+    from shared.utils.constants import K_FACTOR
+except ImportError:
+    # Fallback for standalone usage or different import contexts
+    K_FACTOR = 0.5123  # Å⁻¹ / sqrt(eV), well-known ARPES constant
+
+# Physical constant documentation:
 # k (Å⁻¹) = K_FACTOR * sqrt(Ek (eV)) * sin(theta)
 # where K_FACTOR = sqrt(2 * m_e) / ħ with proper unit conversions
-K_FACTOR = 0.5123  # Å⁻¹ / sqrt(eV), well-known ARPES constant
 
 __all__ = [
     'convert_angle_to_k',
