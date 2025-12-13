@@ -10,10 +10,12 @@ import xarray as xr
 
 # Import the ARPES constant from centralized location
 try:
-    from shared.utils.constants import K_FACTOR
+    from shared.utils.constants import K_FACTOR, DEFAULT_V0, DEFAULT_WORK_FUNCTION
 except ImportError:
     # Fallback for standalone usage or different import contexts
     K_FACTOR = 0.5123  # Å⁻¹ / sqrt(eV), well-known ARPES constant
+    DEFAULT_V0 = 12.57  # eV, inner potential
+    DEFAULT_WORK_FUNCTION = 4.5  # eV, work function
 
 # Physical constant documentation:
 # k (Å⁻¹) = K_FACTOR * sqrt(Ek (eV)) * sin(theta)
@@ -68,7 +70,7 @@ def _calc_kz(Ek, theta, V0):
     return K_FACTOR * np.sqrt(np.maximum(Ek * np.cos(theta)**2 + V0, 0))
 
 
-def convert_2d_angle_to_k(data, hv, phi=4.5, interpolate=True, k_points=None, fill_value=0.0):
+def convert_2d_angle_to_k(data, hv, phi=DEFAULT_WORK_FUNCTION, interpolate=True, k_points=None, fill_value=0.0):
     """
     Convert 2D angle-energy data to k-E space.
     
@@ -188,7 +190,7 @@ def convert_2d_angle_to_k(data, hv, phi=4.5, interpolate=True, k_points=None, fi
     return result
 
 
-def convert_3d_kxky_to_k(data, hv, phi=4.5, angle_dims=('angle_x', 'angle_y'),
+def convert_3d_kxky_to_k(data, hv, phi=DEFAULT_WORK_FUNCTION, angle_dims=('angle_x', 'angle_y'),
                           energy_dim='energy', interpolate=True, k_points=None, fill_value=0.0):
     """
     Convert 3D kx-ky-E mapping data to momentum space.
@@ -335,7 +337,7 @@ def convert_3d_kxky_to_k(data, hv, phi=4.5, angle_dims=('angle_x', 'angle_y'),
     return result
 
 
-def convert_3d_hv_to_k(data, phi=4.5, V0=12.57, convert_hv_to_kz=False, 
+def convert_3d_hv_to_k(data, phi=DEFAULT_WORK_FUNCTION, V0=DEFAULT_V0, convert_hv_to_kz=False, 
                         angle_dim='angle', energy_dim='energy', hv_dim='hv',
                         interpolate=True, k_points=None, fill_value=0.0):
     """
@@ -544,7 +546,7 @@ def convert_3d_hv_to_k(data, phi=4.5, V0=12.57, convert_hv_to_kz=False,
     return result
 
 
-def convert_hv_to_kxkz(data, phi=4.5, V0=12.57, 
+def convert_hv_to_kxkz(data, phi=DEFAULT_WORK_FUNCTION, V0=DEFAULT_V0, 
                         angle_dim='angle', energy_dim='energy', hv_dim='hv',
                         k_points=None, kz_points=None, fill_value=0.0):
     """
@@ -709,7 +711,7 @@ def convert_hv_to_kxkz(data, phi=4.5, V0=12.57,
     return result
 
 
-def convert_angle_to_k(data, hv=None, phi=4.5, V0=12.57, convert_hv_to_kz=False,
+def convert_angle_to_k(data, hv=None, phi=DEFAULT_WORK_FUNCTION, V0=DEFAULT_V0, convert_hv_to_kz=False,
                         interpolate=True, k_points=None, fill_value=0.0,
                         is_hv_scan=False, hv_dim=None):
     """
@@ -803,11 +805,20 @@ def convert_angle_to_k(data, hv=None, phi=4.5, V0=12.57, convert_hv_to_kz=False,
                         "Cannot determine hv dimension. Please specify hv_dim parameter."
                     )
             
-            return convert_3d_hv_to_k(data, phi=phi, V0=V0, 
-                                       convert_hv_to_kz=convert_hv_to_kz,
-                                       hv_dim=actual_hv_dim,
-                                       interpolate=interpolate, k_points=k_points,
-                                       fill_value=fill_value)
+            # If converting to kz grid, use convert_hv_to_kxkz for proper 2D interpolation
+            if convert_hv_to_kz:
+                return convert_hv_to_kxkz(data, phi=phi, V0=V0,
+                                          angle_dim='angle' if 'angle' in dims else [d for d in dims if d not in ['energy', actual_hv_dim]][0],
+                                          energy_dim='energy',
+                                          hv_dim=actual_hv_dim,
+                                          k_points=k_points,
+                                          fill_value=fill_value)
+            else:
+                return convert_3d_hv_to_k(data, phi=phi, V0=V0, 
+                                           convert_hv_to_kz=False,
+                                           hv_dim=actual_hv_dim,
+                                           interpolate=interpolate, k_points=k_points,
+                                           fill_value=fill_value)
         else:
             # kx-ky-E mapping
             if hv is None:

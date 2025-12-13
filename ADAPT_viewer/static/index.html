@@ -38,10 +38,10 @@
             <!-- Image Page Controls -->
             <div id="page-image-controls">
                 <!-- Section 1: Load Data -->
-                <div class="control-group">
+                <div class="control-group" style="padding-top: 0;">
                     <div class="control-group-title">Load Data</div>
                     <div class="file-input-row">
-                        <button id="local-file-btn" class="secondary-btn">Open Local File</button>
+                        <button id="local-file-btn" class="primary-btn">Open Local File</button>
                         <input type="file" id="system-file-input" style="display: none;"
                             accept=".h5,.nxs,.hdf5,.zip,.ibw,.pxt,.pxp">
                     </div>
@@ -185,26 +185,43 @@
                                 <span style="font-size: 0.9em; color: var(--text-secondary);">Parameters</span>
                             </div>
                             <div id="parameters-controls" style="margin-top: 10px;">
-                                <div class="input-row">
+                                <div class="input-row" style="margin-bottom: 5px;">
                                     <label>hv (eV)</label>
                                     <input type="number" id="hv-input" value="21.2" step="0.1" style="width: 80px;">
                                 </div>
-                                <div class="input-row">
+                                <div class="input-row" style="margin-bottom: 5px;">
                                     <label>EF (eV)</label>
                                     <input type="number" id="ef-input" value="0" step="0.01" style="width: 80px;">
                                 </div>
-                                <div class="input-row" id="ef-fit-range-row" style="display: none;">
+                                <div class="input-row" id="ef-fit-range-row" style="display: none; margin-bottom: 5px;">
                                     <label>EF Fit Range</label>
                                     <input type="number" id="ef-fit-range-input" value="0.5" step="0.1"
                                         style="width: 80px;">
                                 </div>
-                                <div class="input-row">
+                                <div class="input-row" style="margin-bottom: 5px;">
                                     <label>θ (deg)</label>
                                     <input type="number" id="theta-input" value="0" step="0.1" style="width: 80px;">
                                 </div>
-                                <div class="input-row" id="scan-input-row" style="display: none;">
+                                <div class="input-row" id="scan-input-row" style="display: none; margin-bottom: 5px;">
                                     <label>Scan</label>
                                     <input type="number" id="scan-input" value="0" step="1" style="width: 80px;">
+                                </div>
+                                <!-- Cursor Width Controls -->
+                                <div class="input-row" style="margin-bottom: 5px;">
+                                    <label>E Width (eV)</label>
+                                    <input type="number" id="cursor-width-energy" value="0" step="0.01" min="0"
+                                        style="width: 80px;">
+                                </div>
+                                <div class="input-row" style="margin-bottom: 5px;">
+                                    <label>θ Width (px)</label>
+                                    <input type="number" id="cursor-width-angle" value="0" step="1" min="0"
+                                        style="width: 80px;">
+                                </div>
+                                <div class="input-row" id="cursor-width-scan-row"
+                                    style="display: none; margin-bottom: 5px;">
+                                    <label>Scan Width (px)</label>
+                                    <input type="number" id="cursor-width-scan" value="0" step="1" min="0"
+                                        style="width: 80px;">
                                 </div>
                             </div>
                         </div>
@@ -379,10 +396,12 @@
                     <div class="input-row" style="margin-bottom: 5px;">
                         <label>Distance</label>
                         <input type="number" id="bz-plane-distance" value="0" step="0.01" style="width: 70px;">
-                        <span id="bz-plane-distance-val" style="min-width: 40px; text-align: right; font-size: 0.85em; color: var(--text-secondary);"></span>
+                        <span id="bz-plane-distance-val"
+                            style="min-width: 40px; text-align: right; font-size: 0.85em; color: var(--text-secondary);"></span>
                     </div>
                     <div style="margin-bottom: 8px;">
-                        <input type="range" id="bz-plane-distance-slider" min="-3.14159" max="3.14159" step="0.01" value="0" style="width: 100%;">
+                        <input type="range" id="bz-plane-distance-slider" min="-3.14159" max="3.14159" step="0.01"
+                            value="0" style="width: 100%;">
                     </div>
                     <div class="input-row" style="margin-bottom: 8px;">
                         <label>Plane Color</label>

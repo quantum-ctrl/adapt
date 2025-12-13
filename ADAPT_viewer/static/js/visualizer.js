@@ -65,6 +65,13 @@ export class Visualizer {
             curvature: false,
             curvatureStrength: 1.0
         };
+
+        // Cursor Width State (for profile integration)
+        this.cursorWidth = {
+            energy: 0,  // eV (converted to pixels using axis)
+            angle: 0,   // pixels
+            scan: 0     // pixels
+        };
     }
 
     getThemeColor(varName, fallback) {
@@ -75,6 +82,18 @@ export class Visualizer {
     setEnhancement(opts) {
         this.enhancement = { ...this.enhancement, ...opts };
         this.draw();
+    }
+
+    /**
+     * Set cursor width for profile integration.
+     * @param {string} type - 'energy' (eV), 'angle' (px), or 'scan' (px)
+     * @param {number} value - Width value
+     */
+    setCursorWidth(type, value) {
+        if (type === 'energy' || type === 'angle' || type === 'scan') {
+            this.cursorWidth[type] = value;
+            this.draw();
+        }
     }
 
     /**
@@ -333,39 +352,60 @@ export class Visualizer {
             const idxX = this.sliceIndices[1]; // Angle
             const idxZ = this.sliceIndices[2]; // Scan
 
-            // 1. XY View (Z-cut): Energy vs Angle
-            const sliceXY = this.extractSlice(2, idxZ);
+            // Get cursor widths for integrated slice extraction
+            const scanWidthPx = this.cursorWidth.scan || 0;
+            const angleWidthPx = this.cursorWidth.angle || 0;
+            const energyWidthEV = this.cursorWidth.energy || 0;
+
+            // Convert energy width from eV to pixels
+            let energyWidthPx = 0;
+            if (energyWidthEV > 0 && this.axes.energy && this.axes.energy.length > 1) {
+                const eMin = this.axes.energy[0];
+                const eMax = this.axes.energy[this.axes.energy.length - 1];
+                const eRange = Math.abs(eMax - eMin);
+                const pxPerEV = this.shape[0] / eRange;
+                energyWidthPx = Math.round(energyWidthEV * pxPerEV);
+            }
+
+            // 1. XY View (Z-cut): Energy vs Angle - integrate over scan width
+            // Overlay shows angle (x) and energy (y) widths
+            const sliceXY = this.extractSliceIntegrated(2, idxZ, scanWidthPx);
             this.draw2D(
                 this.canvases[0],
                 sliceXY,
                 this.shape[1], this.shape[0],
                 this.axes.kx, this.axes.energy,
                 this.axisLabels.x || "Angle", this.axisLabels.y || "Energy (eV)",
-                [idxX, idxY]
+                [idxX, idxY],
+                { x: angleWidthPx, y: energyWidthPx }
             );
 
-            // 2. XZ View (Y-cut): Energy vs Scan - NOW TOP RIGHT
+            // 2. XZ View (Y-cut): Energy vs Scan - integrate over angle width
             // X-axis: Scan (dim2), Y-axis: Energy (dim0)
-            const sliceXZ = this.extractSlice(1, idxX);
+            // Overlay shows scan (x) and energy (y) widths
+            const sliceXZ = this.extractSliceIntegrated(1, idxX, angleWidthPx);
             this.draw2D(
                 this.canvases[1],
                 sliceXZ,
                 this.shape[2], this.shape[0],
                 this.axes.ky, this.axes.energy,
                 this.axisLabels.z || "Scan", this.axisLabels.y || "Energy (eV)",
-                [idxZ, idxY]
+                [idxZ, idxY],
+                { x: scanWidthPx, y: energyWidthPx }
             );
 
-            // 3. YZ View (X-cut): Angle vs Scan - NOW BOTTOM LEFT
+            // 3. YZ View (X-cut): Angle vs Scan - integrate over energy width
             // X-axis: Scan (dim2), Y-axis: Angle (dim1)
-            const sliceYZ = this.extractSlice(0, idxY);
+            // Overlay shows scan (x) and angle (y) widths
+            const sliceYZ = this.extractSliceIntegrated(0, idxY, energyWidthPx);
             this.draw2D(
                 this.canvases[2],
                 sliceYZ,
                 this.shape[2], this.shape[1],
                 this.axes.ky, this.axes.kx,
                 this.axisLabels.z || "Scan", this.axisLabels.x || "Angle",
-                [idxZ, idxX]
+                [idxZ, idxX],
+                { x: scanWidthPx, y: angleWidthPx }
             );
 
             // Draw profiles for 3D
@@ -373,7 +413,7 @@ export class Visualizer {
         }
     }
 
-    draw2D(canvas, data, dataWidth, dataHeight, xAxis, yAxis, xLabel, yLabel, crosshair = []) {
+    draw2D(canvas, data, dataWidth, dataHeight, xAxis, yAxis, xLabel, yLabel, crosshair = [], overlayWidths = null) {
         // Get container size
         const rect = canvas.parentElement.getBoundingClientRect();
         const displayWidth = rect.width;
@@ -624,6 +664,73 @@ export class Visualizer {
             const canvasX = MARGIN.left + tX * plotWidth;
             const canvasY = MARGIN.top + plotHeight - tY * plotHeight;
 
+            // Draw integration region overlay (before crosshair lines)
+            // Use overlayWidths if provided (for 3D views), otherwise default to 2D behavior
+            let xWidthPx = 0;
+            let yWidthPx = 0;
+
+            if (overlayWidths) {
+                // 3D views provide explicit widths in pixels
+                xWidthPx = overlayWidths.x || 0;
+                yWidthPx = overlayWidths.y || 0;
+            } else {
+                // 2D view: use angle and energy defaults
+                xWidthPx = this.cursorWidth.angle || 0;
+                const energyWidthEV = this.cursorWidth.energy || 0;
+                if (energyWidthEV > 0 && yAxis && yAxis.length > 1) {
+                    const eMin = yAxis[0];
+                    const eMax = yAxis[yAxis.length - 1];
+                    const eRange = Math.abs(eMax - eMin);
+                    const pxPerEV = dataHeight / eRange;
+                    yWidthPx = Math.round(energyWidthEV * pxPerEV);
+                }
+            }
+
+            // Calculate overlay bounds in canvas coordinates
+            if (xWidthPx > 0 || yWidthPx > 0) {
+                const halfWidthX = (xWidthPx / (dataWidth - 1)) * plotWidth;
+                const halfWidthY = (yWidthPx / (dataHeight - 1)) * plotHeight;
+
+                const overlayLeft = canvasX - halfWidthX;
+                const overlayRight = canvasX + halfWidthX;
+                const overlayTop = canvasY - halfWidthY;
+                const overlayBottom = canvasY + halfWidthY;
+
+                // Draw vertical band (X-axis integration range)
+                if (xWidthPx > 0) {
+                    ctx.fillStyle = 'rgba(255, 152, 0, 0.35)'; // Orange
+                    ctx.fillRect(
+                        Math.max(MARGIN.left, overlayLeft),
+                        MARGIN.top,
+                        Math.min(overlayRight, MARGIN.left + plotWidth) - Math.max(MARGIN.left, overlayLeft),
+                        plotHeight
+                    );
+                }
+
+                // Draw horizontal band (Y-axis integration range)
+                if (yWidthPx > 0) {
+                    ctx.fillStyle = 'rgba(76, 175, 80, 0.35)'; // Green
+                    ctx.fillRect(
+                        MARGIN.left,
+                        Math.max(MARGIN.top, overlayTop),
+                        plotWidth,
+                        Math.min(overlayBottom, MARGIN.top + plotHeight) - Math.max(MARGIN.top, overlayTop)
+                    );
+                }
+
+                // Draw intersection region (if both widths are set)
+                if (xWidthPx > 0 && yWidthPx > 0) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; // White for intersection
+                    ctx.fillRect(
+                        Math.max(MARGIN.left, overlayLeft),
+                        Math.max(MARGIN.top, overlayTop),
+                        Math.min(overlayRight, MARGIN.left + plotWidth) - Math.max(MARGIN.left, overlayLeft),
+                        Math.min(overlayBottom, MARGIN.top + plotHeight) - Math.max(MARGIN.top, overlayTop)
+                    );
+                }
+            }
+
+            // Draw crosshair lines
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -750,17 +857,44 @@ export class Visualizer {
         const cursorY = (this.sliceIndices && this.sliceIndices[0] !== undefined)
             ? this.sliceIndices[0] : Math.floor(height / 2);
 
-        // Extract EDC (vertical cut at cursor x position)
-        const edc = new Float32Array(height);
-        for (let i = 0; i < height; i++) {
-            edc[i] = this.data[i * width + Math.min(cursorX, width - 1)];
+        // Get cursor widths
+        const angleWidthPx = this.cursorWidth.angle || 0;
+        const energyWidthEV = this.cursorWidth.energy || 0;
+
+        // Convert energy width from eV to pixels
+        let energyWidthPx = 0;
+        if (energyWidthEV > 0 && this.axes.energy && this.axes.energy.length > 1) {
+            const eMin = this.axes.energy[0];
+            const eMax = this.axes.energy[this.axes.energy.length - 1];
+            const eRange = Math.abs(eMax - eMin);
+            const pxPerEV = height / eRange;
+            energyWidthPx = Math.round(energyWidthEV * pxPerEV);
         }
 
-        // Extract MDC (horizontal cut at cursor y position)
+        // Calculate integration ranges (clamp to valid indices)
+        const xStart = Math.max(0, cursorX - angleWidthPx);
+        const xEnd = Math.min(width - 1, cursorX + angleWidthPx);
+        const yStart = Math.max(0, cursorY - energyWidthPx);
+        const yEnd = Math.min(height - 1, cursorY + energyWidthPx);
+
+        // Extract EDC (vertical cut: sum over angle range at each energy)
+        const edc = new Float32Array(height);
+        for (let i = 0; i < height; i++) {
+            let sum = 0;
+            for (let j = xStart; j <= xEnd; j++) {
+                sum += this.data[i * width + j];
+            }
+            edc[i] = sum;
+        }
+
+        // Extract MDC (horizontal cut: sum over energy range at each angle)
         const mdc = new Float32Array(width);
-        const rowStart = Math.min(cursorY, height - 1) * width;
         for (let j = 0; j < width; j++) {
-            mdc[j] = this.data[rowStart + j];
+            let sum = 0;
+            for (let i = yStart; i <= yEnd; i++) {
+                sum += this.data[i * width + j];
+            }
+            mdc[j] = sum;
         }
 
         // Draw EDC - cursor is at cursorY (energy index)
@@ -778,25 +912,68 @@ export class Visualizer {
         const height = this.shape[0]; // Energy dimension
         const depth = this.shape[2];  // Scan dimension
 
-        // Extract EDC from XY slice (vertical cut at angle position)
+        // Get cursor widths
+        const angleWidthPx = this.cursorWidth.angle || 0;
+        const scanWidthPx = this.cursorWidth.scan || 0;
+        const energyWidthEV = this.cursorWidth.energy || 0;
+
+        // Convert energy width from eV to pixels
+        let energyWidthPx = 0;
+        if (energyWidthEV > 0 && this.axes.energy && this.axes.energy.length > 1) {
+            const eMin = this.axes.energy[0];
+            const eMax = this.axes.energy[this.axes.energy.length - 1];
+            const eRange = Math.abs(eMax - eMin);
+            const pxPerEV = height / eRange;
+            energyWidthPx = Math.round(energyWidthEV * pxPerEV);
+        }
+
+        // Calculate integration ranges (clamp to valid indices)
+        const xStart = Math.max(0, idxX - angleWidthPx);
+        const xEnd = Math.min(width - 1, idxX + angleWidthPx);
+        const yStart = Math.max(0, idxY - energyWidthPx);
+        const yEnd = Math.min(height - 1, idxY + energyWidthPx);
+        const zStart = Math.max(0, idxZ - scanWidthPx);
+        const zEnd = Math.min(depth - 1, idxZ + scanWidthPx);
+
+        // Extract EDC from XY slice (sum over angle range at each energy, integrating over scan range too)
         const edc = new Float32Array(height);
         for (let i = 0; i < height; i++) {
-            edc[i] = sliceXY[i * width + idxX];
+            let sum = 0;
+            for (let j = xStart; j <= xEnd; j++) {
+                // For each scan in range, sum the values
+                for (let k = zStart; k <= zEnd; k++) {
+                    // data[i, j, k] in flattened format: i * (width * depth) + j * depth + k
+                    const idx = i * (width * depth) + j * depth + k;
+                    sum += this.data[idx];
+                }
+            }
+            edc[i] = sum;
         }
 
-        // Extract MDC from XY slice (horizontal cut at energy position)
+        // Extract MDC from XY slice (sum over energy range at each angle, integrating over scan range too)
         const mdc = new Float32Array(width);
-        const rowStart = idxY * width;
         for (let j = 0; j < width; j++) {
-            mdc[j] = sliceXY[rowStart + j];
+            let sum = 0;
+            for (let i = yStart; i <= yEnd; i++) {
+                for (let k = zStart; k <= zEnd; k++) {
+                    const idx = i * (width * depth) + j * depth + k;
+                    sum += this.data[idx];
+                }
+            }
+            mdc[j] = sum;
         }
 
-        // Extract Scan profile (at current angle and energy)
+        // Extract Scan profile (sum over energy and angle ranges at each scan position)
         const scanProfile = new Float32Array(depth);
         for (let k = 0; k < depth; k++) {
-            // data[idxY, idxX, k] in flattened format: idxY * (width * depth) + idxX * depth + k
-            const idx = idxY * (width * depth) + idxX * depth + k;
-            scanProfile[k] = this.data[idx];
+            let sum = 0;
+            for (let i = yStart; i <= yEnd; i++) {
+                for (let j = xStart; j <= xEnd; j++) {
+                    const idx = i * (width * depth) + j * depth + k;
+                    sum += this.data[idx];
+                }
+            }
+            scanProfile[k] = sum;
         }
 
         // Draw profiles with cursor indicators
@@ -1659,6 +1836,77 @@ export class Visualizer {
                     const idx = i0 * (d1 * d2) + i1 * d2 + index;
                     slice[ptr++] = this.data[idx];
                 }
+            }
+            return slice;
+        }
+        return null;
+    }
+
+    /**
+     * Extract a slice averaged over a range of indices along the fixed dimension.
+     * Uses mean instead of sum to preserve colormap contrast.
+     * @param {number} dim - Dimension to fix (0=energy, 1=angle, 2=scan)
+     * @param {number} centerIndex - Center index for the slice
+     * @param {number} halfWidth - Half-width of integration range (in pixels)
+     * @returns {Float32Array} - Averaged slice
+     */
+    extractSliceIntegrated(dim, centerIndex, halfWidth) {
+        if (!this.data || this.ndim !== 3) return null;
+        if (halfWidth <= 0) return this.extractSlice(dim, centerIndex);
+
+        const [d0, d1, d2] = this.shape;
+        const maxIdx = [d0, d1, d2][dim] - 1;
+        const startIdx = Math.max(0, centerIndex - halfWidth);
+        const endIdx = Math.min(maxIdx, centerIndex + halfWidth);
+        const count = endIdx - startIdx + 1;
+
+        if (dim === 0) {
+            // Fix dim 0 (Energy). Slice is (d1, d2). Average over energy range.
+            const size = d1 * d2;
+            const slice = new Float32Array(size);
+            for (let idx = startIdx; idx <= endIdx; idx++) {
+                const start = idx * size;
+                for (let i = 0; i < size; i++) {
+                    slice[i] += this.data[start + i];
+                }
+            }
+            // Divide by count to get mean
+            for (let i = 0; i < size; i++) {
+                slice[i] /= count;
+            }
+            return slice;
+        } else if (dim === 1) {
+            // Fix dim 1 (Angle). Slice is (d0, d2). Average over angle range.
+            const size = d0 * d2;
+            const slice = new Float32Array(size);
+            for (let idx = startIdx; idx <= endIdx; idx++) {
+                let ptr = 0;
+                for (let i0 = 0; i0 < d0; i0++) {
+                    const rowStart = i0 * (d1 * d2) + idx * d2;
+                    for (let i2 = 0; i2 < d2; i2++) {
+                        slice[ptr++] += this.data[rowStart + i2];
+                    }
+                }
+            }
+            for (let i = 0; i < size; i++) {
+                slice[i] /= count;
+            }
+            return slice;
+        } else if (dim === 2) {
+            // Fix dim 2 (Scan). Slice is (d0, d1). Average over scan range.
+            const size = d0 * d1;
+            const slice = new Float32Array(size);
+            for (let idx = startIdx; idx <= endIdx; idx++) {
+                let ptr = 0;
+                for (let i0 = 0; i0 < d0; i0++) {
+                    for (let i1 = 0; i1 < d1; i1++) {
+                        const dataIdx = i0 * (d1 * d2) + i1 * d2 + idx;
+                        slice[ptr++] += this.data[dataIdx];
+                    }
+                }
+            }
+            for (let i = 0; i < size; i++) {
+                slice[i] /= count;
             }
             return slice;
         }

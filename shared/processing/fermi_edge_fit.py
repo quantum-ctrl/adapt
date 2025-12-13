@@ -87,28 +87,6 @@ def fermi_dirac_gaussian(E, E_F, T, sigma, A, B):
     return A * 0.5 * erfc(x_eff) + B
 
 
-def fermi_dirac_simple(E, E_F, T):
-    """
-    Simple Fermi-Dirac distribution without Gaussian broadening.
-    
-    Parameters:
-    -----------
-    E : array-like
-        Energy values
-    E_F : float
-        Fermi level position
-    T : float
-        Temperature in Kelvin
-    
-    Returns:
-    --------
-    array-like: Fermi-Dirac distribution
-    """
-    kT = kB * T
-    kT = max(kT, MIN_KT)
-    return 1.0 / (1.0 + np.exp((E - E_F) / kT))
-
-
 def fit_fermi_edge(data, energy_window, theta_range=None, T_fixed=None,
                    energy_dim='energy', angle_dim='angle'):
     """

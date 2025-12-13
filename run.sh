@@ -7,6 +7,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Activate virtual environment if it exists
+if [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
+    echo -e "${YELLOW}Activating virtual environment...${NC}"
+    source "$SCRIPT_DIR/.venv/bin/activate"
+elif [ -f "$SCRIPT_DIR/venv/bin/activate" ]; then
+    echo -e "${YELLOW}Activating virtual environment...${NC}"
+    source "$SCRIPT_DIR/venv/bin/activate"
+fi
+
+# Set Materials Project API key for BZ calculations
+export MP_API_KEY="sMqgB9CvxOwdio2tBv3XYZm3uDCYaH5c"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

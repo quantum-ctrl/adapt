@@ -110,6 +110,24 @@ MAX_UPLOAD_SIZE = 2_000_000_000  # 2GB limit for uploaded files
 # Track temporary uploaded files for cleanup
 TEMP_FILES = []
 
+# Cache for Materials Project lattice data to avoid repeated API calls
+# Key: mp_id, Value: lattice object
+MP_LATTICE_CACHE = {}
+
+def get_lattice_cached(mp_id: str):
+    """Get lattice from cache or fetch from Materials Project API.
+    
+    This prevents repeated API calls when the user is adjusting the
+    intersection plane distance slider in MP ID mode.
+    """
+    if mp_id in MP_LATTICE_CACHE:
+        return MP_LATTICE_CACHE[mp_id]
+    
+    # Fetch from API and cache
+    lattice = load_from_material_id(mp_id)
+    MP_LATTICE_CACHE[mp_id] = lattice
+    return lattice
+
 def cleanup_temp_files():
     """Clean up temporary files on shutdown."""
     for tmp in TEMP_FILES:
@@ -808,7 +826,7 @@ async def calculate_bz(request: BZRequest):
     """Calculate and plot Brillouin Zone, returning an image."""
     try:
         if request.method == 'mp' and request.mp_id:
-            lattice = load_from_material_id(request.mp_id)
+            lattice = get_lattice_cached(request.mp_id)
         else:
             # Defaults
             a = request.a if request.a is not None else 3.5
@@ -988,9 +1006,9 @@ async def update_intersection_plane(request: UpdatePlaneRequest):
     try:
         import plotly.graph_objects as go
         
-        # Regenerate BZ from cached parameters
+        # Regenerate BZ from cached parameters (uses lattice cache for MP ID)
         if request.method == 'mp' and request.mp_id:
-            lattice = load_from_material_id(request.mp_id)
+            lattice = get_lattice_cached(request.mp_id)
         else:
             a = request.a if request.a is not None else 3.5
             b = request.b if request.b is not None else 3.5

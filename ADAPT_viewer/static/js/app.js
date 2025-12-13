@@ -77,6 +77,11 @@ class App {
             thetaInput: document.getElementById('theta-input'),
             scanInput: document.getElementById('scan-input'),
             scanInputRow: document.getElementById('scan-input-row'),
+            // Cursor Width controls
+            cursorWidthEnergy: document.getElementById('cursor-width-energy'),
+            cursorWidthAngle: document.getElementById('cursor-width-angle'),
+            cursorWidthScan: document.getElementById('cursor-width-scan'),
+            cursorWidthScanRow: document.getElementById('cursor-width-scan-row'),
             getFromCursorBtn: document.getElementById('get-from-cursor-btn'),
 
             // Alignment controls
@@ -1054,7 +1059,7 @@ class App {
                 const angleToKBtn = document.getElementById('angle-to-k-btn');
 
                 if (normBtn) normBtn.style.display = e.target.checked ? 'block' : 'none';
-                // if (kxkzBtn) kxkzBtn.style.display = e.target.checked ? 'block' : 'none'; // Temporarily hidden as functionality is incomplete
+                if (kxkzBtn) kxkzBtn.style.display = e.target.checked ? 'block' : 'none';
                 if (kxhvBtn) kxhvBtn.style.display = e.target.checked ? 'block' : 'none';
 
                 // Toggle standard convert button inversely? 
@@ -1125,6 +1130,26 @@ class App {
             this.ui.curvatureSlider.addEventListener('input', (e) => {
                 if (this.ui.curvatureVal) this.ui.curvatureVal.textContent = e.target.value;
                 this.updateEnhancement();
+            });
+        }
+
+        // Cursor Width controls
+        if (this.ui.cursorWidthEnergy) {
+            this.ui.cursorWidthEnergy.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value) || 0;
+                this.visualizer.setCursorWidth('energy', Math.max(0, val));
+            });
+        }
+        if (this.ui.cursorWidthAngle) {
+            this.ui.cursorWidthAngle.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value) || 0;
+                this.visualizer.setCursorWidth('angle', Math.max(0, val));
+            });
+        }
+        if (this.ui.cursorWidthScan) {
+            this.ui.cursorWidthScan.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value) || 0;
+                this.visualizer.setCursorWidth('scan', Math.max(0, val));
             });
         }
 
@@ -1400,6 +1425,10 @@ class App {
             // Show/hide scan input row for 3D data
             if (this.ui.scanInputRow) {
                 this.ui.scanInputRow.style.display = is3D ? 'flex' : 'none';
+            }
+            // Show/hide cursor width scan row for 3D data
+            if (this.ui.cursorWidthScanRow) {
+                this.ui.cursorWidthScanRow.style.display = is3D ? 'flex' : 'none';
             }
 
             // Default axis assignment: for 3D data, set X to Angle, Y to Energy, Z to Scan.
