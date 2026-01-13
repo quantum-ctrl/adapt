@@ -2,6 +2,13 @@
 
 ADAPT is a comprehensive toolkit designed for the visualization and analysis of Angle-Resolved Photoemission Spectroscopy (ARPES) data. It combines a powerful desktop data browser with a high-performance web-based 3D visualization engine.
 
+## Screenshots
+
+<p align="center">
+  <img src="assets/browser.png" width="45%" alt="ADAPT Browser" />
+  <img src="assets/viewer.png" width="45%" alt="ADAPT Viewer" />
+</p>
+
 ## Features
 
 *   **Data Browser (Desktop)**: A PyQt-based desktop application for browsing, inspecting, and managing ARPES datasets.
@@ -12,7 +19,24 @@ ADAPT is a comprehensive toolkit designed for the visualization and analysis of 
     *   3D construction from lattice parameters or Materials Project ID.
     *   Interactive intersection plane visualization (Miller indices, distance, custom color).
 
-### Installation
+## Installation
+
+### 1. Get the Source Code (Two Ways)
+
+**Method A: Download ZIP (Easiest)**
+1. Click the blue **"<> Code"** button at the top of this GitHub page.
+2. Select **"Download ZIP"**.
+3. Extract the ZIP file and open the folder.
+
+**Method B: Git Clone (For Developers)**
+```bash
+git clone https://github.com/quantum-ctrl/ADAPT.git
+cd ADAPT
+```
+
+### 2. Environment Setup
+
+Select the instructions for your operating system:
 
 #### macOS
 1.  **Install Homebrew** (if not already installed):
