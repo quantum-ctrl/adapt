@@ -4,10 +4,9 @@ ADAPT is a comprehensive toolkit designed for the visualization and analysis of 
 
 ## Screenshots
 
-<p align="center">
-  <img src="assets/browser.png" width="45%" alt="ADAPT Browser" />
-  <img src="assets/viewer.png" width="45%" alt="ADAPT Viewer" />
-</p>
+| ADAPT Browser | ADAPT Viewer |
+| :---: | :---: |
+| <img src="assets/browser.png" width="100%" alt="ADAPT Browser" /> | <img src="assets/viewer.png" width="100%" alt="ADAPT Viewer" /> |
 
 ## Features
 
