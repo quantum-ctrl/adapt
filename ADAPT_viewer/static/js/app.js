@@ -886,8 +886,12 @@ class App {
             this.resetData();
         });
 
-        document.getElementById('export-btn').addEventListener('click', () => {
-            this.visualizer.exportImage();
+        document.getElementById('export-png-btn').addEventListener('click', () => {
+            this.visualizer.exportFigures('png');
+        });
+
+        document.getElementById('export-svg-btn').addEventListener('click', () => {
+            this.visualizer.exportFigures('svg');
         });
 
         document.getElementById('export-profiles-btn').addEventListener('click', () => {
@@ -1875,7 +1879,8 @@ class App {
             this.ui.setFermiBtn,
             document.getElementById('angle-to-k-btn'),
             document.getElementById('reset-data-btn'),
-            document.getElementById('export-btn'),
+            document.getElementById('export-png-btn'),
+            document.getElementById('export-svg-btn'),
             document.getElementById('invert-colormap-check'),
             document.getElementById('mapping-mode-select'),
             document.getElementById('kz-mode-select'),

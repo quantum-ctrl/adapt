@@ -413,14 +413,22 @@ export class Visualizer {
         }
     }
 
-    draw2D(canvas, data, dataWidth, dataHeight, xAxis, yAxis, xLabel, yLabel, crosshair = [], overlayWidths = null) {
-        // Get container size
-        const rect = canvas.parentElement.getBoundingClientRect();
-        const displayWidth = rect.width;
-        const displayHeight = rect.height;
+    draw2D(canvas, data, dataWidth, dataHeight, xAxis, yAxis, xLabel, yLabel, crosshair = [], overlayWidths = null, skipCrosshair = false, exportDimensions = null, exportScale = null) {
+        // Get container size - use explicit dimensions for export or getBoundingClientRect for normal rendering
+        let displayWidth, displayHeight;
+        if (exportDimensions) {
+            displayWidth = exportDimensions.width;
+            displayHeight = exportDimensions.height;
+        } else {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            displayWidth = rect.width;
+            displayHeight = rect.height;
+        }
 
-        // Set canvas resolution to match display size (times DPR for sharpness)
-        const dpr = window.devicePixelRatio || 1;
+        // For export, use provided scale; otherwise use device pixel ratio
+        const dpr = exportScale || window.devicePixelRatio || 1;
+
+        // Set canvas resolution
         canvas.width = displayWidth * dpr;
         canvas.height = displayHeight * dpr;
 
@@ -730,17 +738,19 @@ export class Visualizer {
                 }
             }
 
-            // Draw crosshair lines
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            // Vertical
-            ctx.moveTo(canvasX, MARGIN.top);
-            ctx.lineTo(canvasX, MARGIN.top + plotHeight);
-            // Horizontal
-            ctx.moveTo(MARGIN.left, canvasY);
-            ctx.lineTo(MARGIN.left + plotWidth, canvasY);
-            ctx.stroke();
+            // Draw crosshair lines (skip if exporting)
+            if (!skipCrosshair) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                // Vertical
+                ctx.moveTo(canvasX, MARGIN.top);
+                ctx.lineTo(canvasX, MARGIN.top + plotHeight);
+                // Horizontal
+                ctx.moveTo(MARGIN.left, canvasY);
+                ctx.lineTo(MARGIN.left + plotWidth, canvasY);
+                ctx.stroke();
+            }
         }
 
         // 5. Draw Calibration Line
@@ -1913,58 +1923,331 @@ export class Visualizer {
         return null;
     }
 
-    exportImage() {
+    /**
+     * Export figures without crosshair, as individual files for 3D data.
+     * @param {string} format - 'png' or 'svg'
+     */
+    exportFigures(format = 'png') {
         if (!this.data) return;
 
-        let exportCanvas;
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
 
         if (this.ndim === 2) {
-            // 2D: Just use the single canvas
-            exportCanvas = this.canvases[0];
+            // 2D: Render to export canvas without crosshair
+            const { canvas: exportCanvas, viewParams } = this._renderViewForExport(0, '2d');
+            this._downloadCanvas(exportCanvas, `arpes_2d_${timestamp}`, format, viewParams);
         } else if (this.ndim === 3) {
-            // 3D: Composite the 3 views
-            // Layout: 
-            // [XY] [XZ]
-            // [YZ] [Info]
-            // We'll create a canvas that fits them all.
-            // Assuming grid layout with 2 columns.
-
-            const c1 = this.canvases[0]; // XY
-            const c2 = this.canvases[1]; // XZ
-            const c3 = this.canvases[2]; // YZ
-
-            const width = c1.width + c2.width;
-            const height = c1.height + c3.height; // Approximate
-
-            exportCanvas = document.createElement('canvas');
-            exportCanvas.width = width;
-            exportCanvas.height = height;
-            const ctx = exportCanvas.getContext('2d');
-
-            // Fill white background
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, width, height);
-
-            // Draw canvases
-            // XY (Top Left)
-            ctx.drawImage(c1, 0, 0);
-            // XZ (Top Right)
-            ctx.drawImage(c2, c1.width, 0);
-            // YZ (Bottom Left)
-            ctx.drawImage(c3, 0, c1.height);
-
-            // Add some text?
-            ctx.fillStyle = 'black';
-            ctx.font = '20px sans-serif';
-            ctx.fillText("3D View Composite", c1.width + 20, c1.height + 40);
+            // 3D: Export each view as individual file
+            const viewNames = ['xy', 'xz', 'yz'];
+            for (let i = 0; i < 3; i++) {
+                const { canvas: exportCanvas, viewParams } = this._renderViewForExport(i, viewNames[i]);
+                this._downloadCanvas(exportCanvas, `arpes_${viewNames[i]}_${timestamp}`, format, viewParams);
+            }
         }
 
-        // Trigger Download
-        const link = document.createElement('a');
-        link.download = 'arpes_data_export.png';
-        link.href = exportCanvas.toDataURL('image/png');
-        link.click();
+        // Redraw with crosshair after export
+        this.draw();
     }
+
+    /**
+     * Render a view to an export canvas without crosshair.
+     * @param {number} viewIndex - Index of the view (0, 1, 2 for 3D)
+     * @param {string} viewType - 'xy', 'xz', 'yz', or '2d'
+     * @returns {HTMLCanvasElement} Canvas ready for export
+     */
+    _renderViewForExport(viewIndex, viewType) {
+        const sourceCanvas = this.canvases[viewIndex];
+        const sourceRect = sourceCanvas.parentElement.getBoundingClientRect();
+
+        // Publication quality: 300 DPI
+        // Standard screen is ~96 DPI, so we need ~3.125x scaling
+        // Using 3x for clean integer scaling, resulting in ~288 DPI at typical screen resolution
+        const EXPORT_SCALE = 3;
+
+        // Create high-resolution export canvas
+        const exportCanvas = document.createElement('canvas');
+        const displayWidth = sourceRect.width;
+        const displayHeight = sourceRect.height;
+        exportCanvas.width = displayWidth * EXPORT_SCALE;
+        exportCanvas.height = displayHeight * EXPORT_SCALE;
+
+        // Get the data and parameters for this view
+        let sliceData, dataWidth, dataHeight, xAxis, yAxis, xLabel, yLabel, crosshair, overlayWidths;
+
+        if (this.ndim === 2) {
+            sliceData = this.data;
+            dataWidth = this.shape[1];
+            dataHeight = this.shape[0];
+            xAxis = this.axes.kx;
+            yAxis = this.axes.energy;
+            xLabel = this.axisLabels.x || "Angle";
+            yLabel = this.axisLabels.y || "Energy (eV)";
+            crosshair = [this.sliceIndices[1], this.sliceIndices[0]];
+            overlayWidths = null;
+        } else {
+            const [nz, ny, nx] = this.shape;
+            const idxY = this.sliceIndices[0];
+            const idxX = this.sliceIndices[1];
+            const idxZ = this.sliceIndices[2];
+
+            const scanWidthPx = this.cursorWidth.scan || 0;
+            const angleWidthPx = this.cursorWidth.angle || 0;
+            const energyWidthEV = this.cursorWidth.energy || 0;
+            let energyWidthPx = 0;
+            if (energyWidthEV > 0 && this.axes.energy && this.axes.energy.length > 1) {
+                const eMin = this.axes.energy[0];
+                const eMax = this.axes.energy[this.axes.energy.length - 1];
+                const eRange = Math.abs(eMax - eMin);
+                const pxPerEV = this.shape[0] / eRange;
+                energyWidthPx = Math.round(energyWidthEV * pxPerEV);
+            }
+
+            if (viewType === 'xy') {
+                sliceData = this.extractSliceIntegrated(2, idxZ, scanWidthPx);
+                dataWidth = this.shape[1];
+                dataHeight = this.shape[0];
+                xAxis = this.axes.kx;
+                yAxis = this.axes.energy;
+                xLabel = this.axisLabels.x || "Angle";
+                yLabel = this.axisLabels.y || "Energy (eV)";
+                crosshair = [idxX, idxY];
+                overlayWidths = { x: angleWidthPx, y: energyWidthPx };
+            } else if (viewType === 'xz') {
+                sliceData = this.extractSliceIntegrated(1, idxX, angleWidthPx);
+                dataWidth = this.shape[2];
+                dataHeight = this.shape[0];
+                xAxis = this.axes.ky;
+                yAxis = this.axes.energy;
+                xLabel = this.axisLabels.z || "Scan";
+                yLabel = this.axisLabels.y || "Energy (eV)";
+                crosshair = [idxZ, idxY];
+                overlayWidths = { x: scanWidthPx, y: energyWidthPx };
+            } else if (viewType === 'yz') {
+                sliceData = this.extractSliceIntegrated(0, idxY, energyWidthPx);
+                dataWidth = this.shape[2];
+                dataHeight = this.shape[1];
+                xAxis = this.axes.ky;
+                yAxis = this.axes.kx;
+                xLabel = this.axisLabels.z || "Scan";
+                yLabel = this.axisLabels.x || "Angle";
+                crosshair = [idxZ, idxX];
+                overlayWidths = { x: scanWidthPx, y: angleWidthPx };
+            }
+        }
+
+        // Draw to export canvas with skipCrosshair=true, passing explicit dimensions and scale
+        const exportDimensions = { width: displayWidth, height: displayHeight };
+        this.draw2D(exportCanvas, sliceData, dataWidth, dataHeight, xAxis, yAxis, xLabel, yLabel, crosshair, overlayWidths, true, exportDimensions, EXPORT_SCALE);
+
+        // Return canvas and view parameters for SVG generation
+        return {
+            canvas: exportCanvas,
+            viewParams: { xAxis, yAxis, xLabel, yLabel }
+        };
+    }
+
+    /**
+     * Download canvas as file (PNG or SVG).
+     * For SVG: Creates layered SVG with separate groups for image and vector axes.
+     * @param {HTMLCanvasElement} canvas - Canvas to export
+     * @param {string} filename - Base filename (without extension)
+     * @param {string} format - 'png' or 'svg'
+     * @param {Object} viewParams - Parameters for generating vector axes (xAxis, yAxis, xLabel, yLabel)
+     */
+    _downloadCanvas(canvas, filename, format, viewParams = null) {
+        const link = document.createElement('a');
+
+        if (format === 'svg') {
+            const svgContent = this._generateLayeredSVG(canvas, viewParams);
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            link.href = URL.createObjectURL(blob);
+            link.download = `${filename}.svg`;
+        } else {
+            // PNG export
+            link.href = canvas.toDataURL('image/png');
+            link.download = `${filename}.png`;
+        }
+
+        link.click();
+
+        // Clean up object URL if created
+        if (format === 'svg') {
+            setTimeout(() => URL.revokeObjectURL(link.href), 100);
+        }
+    }
+
+    /**
+     * Generate layered SVG with separate groups for image and vector elements.
+     * Layers: Heatmap (raster), Axes (vector), Labels (vector text)
+     * @param {HTMLCanvasElement} canvas - Source canvas with heatmap
+     * @param {Object} viewParams - Axis parameters for vector elements
+     * @returns {string} SVG content string
+     */
+    _generateLayeredSVG(canvas, viewParams) {
+        const width = canvas.width;
+        const height = canvas.height;
+        const scale = 3; // Match export scale
+
+        // Calculate plot area in export coordinates
+        const margin = {
+            top: MARGIN.top * scale,
+            right: MARGIN.right * scale,
+            bottom: MARGIN.bottom * scale,
+            left: MARGIN.left * scale
+        };
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+
+        // Create heatmap-only canvas (without axes)
+        const heatmapCanvas = document.createElement('canvas');
+        heatmapCanvas.width = plotWidth;
+        heatmapCanvas.height = plotHeight;
+        const heatmapCtx = heatmapCanvas.getContext('2d');
+
+        // Copy only the plot area from the full canvas
+        heatmapCtx.drawImage(canvas,
+            margin.left, margin.top, plotWidth, plotHeight,
+            0, 0, plotWidth, plotHeight);
+        const heatmapDataUrl = heatmapCanvas.toDataURL('image/png');
+
+        // Build SVG with layers
+        let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+     width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  
+  <!-- Heatmap Layer (Raster) -->
+  <g id="heatmap-layer">
+    <image x="${margin.left}" y="${margin.top}" width="${plotWidth}" height="${plotHeight}" 
+           xlink:href="${heatmapDataUrl}" preserveAspectRatio="none"/>
+  </g>
+  
+  <!-- Axes Layer (Vector) -->
+  <g id="axes-layer" stroke="#888888" stroke-width="${scale}" fill="none">
+    <!-- X Axis -->
+    <line x1="${margin.left}" y1="${margin.top + plotHeight}" 
+          x2="${margin.left + plotWidth}" y2="${margin.top + plotHeight}"/>
+    <!-- Y Axis -->
+    <line x1="${margin.left}" y1="${margin.top}" 
+          x2="${margin.left}" y2="${margin.top + plotHeight}"/>
+  </g>
+`;
+
+        // Add tick marks and labels if viewParams provided
+        if (viewParams && viewParams.xAxis && viewParams.yAxis) {
+            const fontSize = 12 * scale;
+            const labelFontSize = 14 * scale;
+            const tickSize = 5 * scale;
+
+            // X-axis ticks and labels
+            const xMin = viewParams.xAxis[0];
+            const xMax = viewParams.xAxis[viewParams.xAxis.length - 1];
+            const xTicks = this.getNiceTicks(xMin, xMax, Math.floor(plotWidth / (60 * scale)));
+
+            svg += `
+  <!-- X-Axis Ticks Layer (Vector) -->
+  <g id="x-ticks-layer" stroke="#888888" stroke-width="${scale}" fill="none">
+`;
+            xTicks.forEach(val => {
+                const t = (val - xMin) / (xMax - xMin);
+                if (t >= 0 && t <= 1) {
+                    const x = margin.left + t * plotWidth;
+                    svg += `    <line x1="${x}" y1="${margin.top + plotHeight}" x2="${x}" y2="${margin.top + plotHeight + tickSize}"/>
+`;
+                }
+            });
+            svg += `  </g>
+`;
+
+            // X-axis tick labels
+            svg += `
+  <!-- X-Axis Labels Layer (Vector Text) -->
+  <g id="x-labels-layer" font-family="sans-serif" font-size="${fontSize}" fill="#CCCCCC" text-anchor="middle">
+`;
+            xTicks.forEach(val => {
+                const t = (val - xMin) / (xMax - xMin);
+                if (t >= 0 && t <= 1) {
+                    const x = margin.left + t * plotWidth;
+                    const label = Math.abs(val) < 1e-10 ? "0" :
+                        Math.abs(val) < 0.01 ? val.toExponential(1) :
+                            parseFloat(val.toFixed(2)).toString();
+                    svg += `    <text x="${x}" y="${margin.top + plotHeight + tickSize + fontSize}">${label}</text>
+`;
+                }
+            });
+            svg += `  </g>
+`;
+
+            // X-axis label
+            if (viewParams.xLabel) {
+                svg += `
+  <!-- X-Axis Title Layer (Vector Text) -->
+  <g id="x-title-layer" font-family="sans-serif" font-size="${labelFontSize}" fill="#E0E0E0" text-anchor="middle">
+    <text x="${margin.left + plotWidth / 2}" y="${margin.top + plotHeight + tickSize + fontSize * 2.2}">${viewParams.xLabel}</text>
+  </g>
+`;
+            }
+
+            // Y-axis ticks and labels
+            const yMin = viewParams.yAxis[0];
+            const yMax = viewParams.yAxis[viewParams.yAxis.length - 1];
+            const yTicks = this.getNiceTicks(yMin, yMax, Math.floor(plotHeight / (40 * scale)));
+
+            svg += `
+  <!-- Y-Axis Ticks Layer (Vector) -->
+  <g id="y-ticks-layer" stroke="#888888" stroke-width="${scale}" fill="none">
+`;
+            yTicks.forEach(val => {
+                const t = (val - yMin) / (yMax - yMin);
+                if (t >= 0 && t <= 1) {
+                    const y = margin.top + plotHeight - t * plotHeight;
+                    svg += `    <line x1="${margin.left}" y1="${y}" x2="${margin.left - tickSize}" y2="${y}"/>
+`;
+                }
+            });
+            svg += `  </g>
+`;
+
+            // Y-axis tick labels
+            svg += `
+  <!-- Y-Axis Labels Layer (Vector Text) -->
+  <g id="y-labels-layer" font-family="sans-serif" font-size="${fontSize}" fill="#CCCCCC" text-anchor="end">
+`;
+            yTicks.forEach(val => {
+                const t = (val - yMin) / (yMax - yMin);
+                if (t >= 0 && t <= 1) {
+                    const y = margin.top + plotHeight - t * plotHeight;
+                    const label = Math.abs(val) < 1e-10 ? "0" :
+                        Math.abs(val) < 0.01 ? val.toExponential(1) :
+                            parseFloat(val.toFixed(2)).toString();
+                    svg += `    <text x="${margin.left - tickSize - 3 * scale}" y="${y + fontSize / 3}">${label}</text>
+`;
+                }
+            });
+            svg += `  </g>
+`;
+
+            // Y-axis label (rotated)
+            if (viewParams.yLabel) {
+                const yLabelX = fontSize;
+                const yLabelY = margin.top + plotHeight / 2;
+                svg += `
+  <!-- Y-Axis Title Layer (Vector Text) -->
+  <g id="y-title-layer" font-family="sans-serif" font-size="${labelFontSize}" fill="#E0E0E0" text-anchor="middle">
+    <text x="${yLabelX}" y="${yLabelY}" transform="rotate(-90, ${yLabelX}, ${yLabelY})">${viewParams.yLabel}</text>
+  </g>
+`;
+            }
+        }
+
+        svg += `</svg>`;
+        return svg;
+    }
+
+    // Keep old method for backward compatibility
+    exportImage() {
+        this.exportFigures('png');
+    }
+
 
     // ========== CROP MODE METHODS ==========
 
