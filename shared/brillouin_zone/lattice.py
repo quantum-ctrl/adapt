@@ -37,18 +37,31 @@ from typing import Optional, Tuple, Dict, Any
 import os
 
 # Optional imports with fallbacks
+_PYMATGEN_ERROR = None
 try:
     from pymatgen.core import Structure, Lattice as PymatgenLattice
     from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
     _HAS_PYMATGEN = True
-except ImportError:
+except ImportError as e:
     _HAS_PYMATGEN = False
+    _PYMATGEN_ERROR = str(e)
 
+_HAS_MP_API = False
+_MP_API_ERROR = None
 try:
-    from mp_api.client import MPRester
+    try:
+        from mp_api.client import MPRester
+    except ImportError:
+        # Fallback for alternative or older mp-api paths
+        from mp_api import MPRester
     _HAS_MP_API = True
-except ImportError:
+except ImportError as e:
     _HAS_MP_API = False
+    _MP_API_ERROR = str(e)
+except Exception as e:
+    # Catching other potential version-related initialization errors (e.g. numpy mismatch)
+    _HAS_MP_API = False
+    _MP_API_ERROR = f"{type(e).__name__}: {str(e)}"
 
 
 # Crystal system classification based on lattice parameters
@@ -332,8 +345,10 @@ def load_from_cif(cif_path: str, use_primitive: bool = True) -> CrystalLattice:
         If CIF file does not exist
     """
     if not _HAS_PYMATGEN:
-        raise ImportError("pymatgen is required for CIF parsing. "
-                          "Install with: pip install pymatgen")
+        msg = "pymatgen is required for CIF parsing."
+        if _PYMATGEN_ERROR:
+            msg += f" (Import error: {_PYMATGEN_ERROR})"
+        raise ImportError(f"{msg} Install with: pip install pymatgen")
     
     if not os.path.exists(cif_path):
         raise FileNotFoundError(f"CIF file not found: {cif_path}")
@@ -399,8 +414,10 @@ def load_from_formula(formula: str, api_key: Optional[str] = None,
         If no structures found for the formula
     """
     if not _HAS_MP_API:
-        raise ImportError("mp-api is required for Materials Project queries. "
-                          "Install with: pip install mp-api")
+        error_msg = "mp-api is required for Materials Project queries."
+        if _MP_API_ERROR:
+            error_msg += f" (Import error: {_MP_API_ERROR})"
+        raise ImportError(f"{error_msg} Install with: pip install mp-api")
     
     if api_key is None:
         api_key = os.getenv("MP_API_KEY")
@@ -473,8 +490,10 @@ def load_from_material_id(material_id: str, api_key: Optional[str] = None,
         If no structure found for the material ID
     """
     if not _HAS_MP_API:
-        raise ImportError("mp-api is required for Materials Project queries. "
-                          "Install with: pip install mp-api")
+        error_msg = "mp-api is required for Materials Project queries."
+        if _MP_API_ERROR:
+            error_msg += f" (Import error: {_MP_API_ERROR})"
+        raise ImportError(f"{error_msg} Install with: pip install mp-api")
     
     if api_key is None:
         api_key = os.getenv("MP_API_KEY")
