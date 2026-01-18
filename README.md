@@ -48,11 +48,11 @@ Select the instructions for your operating system:
     ```
 3.  **Create Virtual Environment**:
     ```bash
-    python3 -m venv venv
+    python3 -m venv .venv
     ```
 4.  **Activate Virtual Environment**:
     ```bash
-    source venv/bin/activate
+    source .venv/bin/activate
     ```
 5.  **Install Dependencies**:
     ```bash
@@ -66,11 +66,11 @@ Select the instructions for your operating system:
 2.  **Create Virtual Environment**:
     Open PowerShell or Command Prompt and run:
     ```powershell
-    python -m venv venv
+    python -m venv .venv
     ```
 3.  **Activate Virtual Environment**:
     ```powershell
-    .\venv\Scripts\activate
+    .\.venv\Scripts\activate
     ```
 4.  **Install Dependencies**:
     ```powershell
@@ -86,11 +86,11 @@ Select the instructions for your operating system:
     ```
 2.  **Create Virtual Environment**:
     ```bash
-    python3 -m venv venv
+    python3 -m venv .venv
     ```
 3.  **Activate Virtual Environment**:
     ```bash
-    source venv/bin/activate
+    source .venv/bin/activate
     ```
 4.  **Install Dependencies**:
     ```bash
