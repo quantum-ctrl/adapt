@@ -358,7 +358,7 @@ class MainWindow(QMainWindow):
         # Open with Viewer button
         self.open_viewer_action = QAction("🔬 Open with Viewer", self)
         self.open_viewer_action.setShortcut("Ctrl+Shift+V")
-        self.open_viewer_action.setToolTip("Open selected file in ADAPT Viewer (web-based 3D visualization)")
+        self.open_viewer_action.setToolTip("Open selected file in ADAPT Edit (web-based 3D visualization)")
         self.open_viewer_action.triggered.connect(self._on_open_with_viewer)
         toolbar.addAction(self.open_viewer_action)
         
@@ -588,7 +588,7 @@ class MainWindow(QMainWindow):
         Handle 'Open with Viewer' action.
         
         Writes the current file path and metadata to session.json
-        and opens ADAPT Viewer in the default web browser.
+        and opens ADAPT Edit in the default web browser.
         """
         # Get the currently selected file from the file panel
         selected_file = self.file_panel.get_selected_file()

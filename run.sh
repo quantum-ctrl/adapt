@@ -48,7 +48,7 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  browser     Start ADAPT Browser (Desktop GUI)"
-    echo "  viewer      Start ADAPT Viewer (Web Server)"
+    echo "  edit        Start ADAPT Edit (Web Server)"
     echo "  both        Start both Browser and Viewer"
     echo "  install     Install dependencies"
     echo "  help        Show this help message"
@@ -75,15 +75,15 @@ start_browser() {
 
 # Start Viewer
 start_viewer() {
-    echo -e "${GREEN}Starting ADAPT Viewer on http://localhost:8000${NC}"
-    cd "$SCRIPT_DIR/ADAPT_viewer"
+    echo -e "${GREEN}Starting ADAPT Edit on http://localhost:8000${NC}"
+    cd "$SCRIPT_DIR/ADAPT_edit"
     python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 }
 
 # Start both (Viewer in background)
 start_both() {
-    echo -e "${GREEN}Starting ADAPT Viewer in background...${NC}"
-    cd "$SCRIPT_DIR/ADAPT_viewer"
+    echo -e "${GREEN}Starting ADAPT Edit in background...${NC}"
+    cd "$SCRIPT_DIR/ADAPT_edit"
     python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 &
     VIEWER_PID=$!
     echo -e "${BLUE}Viewer PID: $VIEWER_PID${NC}"

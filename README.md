@@ -4,9 +4,9 @@ ADAPT is a comprehensive toolkit designed for the visualization and analysis of 
 
 ## Screenshots
 
-| ADAPT Browser | ADAPT Viewer |
+| ADAPT Browser | ADAPT Edit |
 | :---: | :---: |
-| <img src="assets/browser.png" width="100%" alt="ADAPT Browser" /> | <img src="assets/viewer.png" width="100%" alt="ADAPT Viewer" /> |
+| <img src="assets/browser.png" width="100%" alt="ADAPT Browser" /> | <img src="assets/viewer.png" width="100%" alt="ADAPT Edit" /> |
 
 ## Features
 
@@ -119,7 +119,7 @@ To run both the Browser and Viewer, open two terminals and run:
 
 **Terminal 1 (Viewer):**
 ```powershell
-cd ADAPT_viewer
+cd ADAPT_edit
 python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -132,7 +132,7 @@ python app.py
 ## Project Structure
 
 *   `ADAPT_browser/`: Desktop GUI application code.
-*   `ADAPT_viewer/`: Web server and visualization code.
+*   `ADAPT_edit/`: Web server and visualization code.
 *   `shared/`: Shared utilities and libraries.
 *   `requirements.txt`: Python package dependencies.
 *   `run.sh`: Main launcher script.

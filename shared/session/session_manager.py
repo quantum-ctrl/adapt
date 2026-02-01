@@ -1,5 +1,5 @@
 """
-Session Manager - Manages session state between ADAPT Browser and ADAPT Viewer.
+Session Manager - Manages session state between ADAPT Browser and ADAPT Edit.
 
 This module provides functionality to write and read session data stored in
 the project's .adapt_temp directory. It enables the Browser to pass file paths 
@@ -63,7 +63,7 @@ def write_session(file_path: str, metadata: Optional[dict] = None) -> bool:
     Write session data to the session file.
     
     This function saves the current file path and metadata to ~/.adapt/session.json
-    so that ADAPT Viewer can read it and load the file.
+    so that ADAPT Edit can read it and load the file.
     
     Args:
         file_path: Absolute path to the ARPES data file.
