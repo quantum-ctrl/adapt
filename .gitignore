@@ -38,4 +38,5 @@ Thumbs.db
 
 # Project Specific
 .adapt_temp/
+.agent/
 session.json
