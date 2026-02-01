@@ -1,6 +1,6 @@
 #!/bin/bash
 # ADAPT - One-click launcher script
-# Run both Browser and Viewer applications
+# Run both Browser and Edit applications
 
 set -e
 
@@ -49,13 +49,13 @@ usage() {
     echo "Commands:"
     echo "  browser     Start ADAPT Browser (Desktop GUI)"
     echo "  edit        Start ADAPT Edit (Web Server)"
-    echo "  both        Start both Browser and Viewer"
+    echo "  both        Start both Browser and Edit"
     echo "  install     Install dependencies"
     echo "  help        Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0 browser   # Start the desktop data browser"
-    echo "  $0 viewer    # Start the web visualization server"
+    echo "  $0 edit     # Start the web visualization server"
     echo "  $0 both      # Start both applications"
 }
 
@@ -73,20 +73,20 @@ start_browser() {
     python3 app.py
 }
 
-# Start Viewer
-start_viewer() {
+# Start Edit
+start_edit() {
     echo -e "${GREEN}Starting ADAPT Edit on http://localhost:8000${NC}"
     cd "$SCRIPT_DIR/ADAPT_edit"
     python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 }
 
-# Start both (Viewer in background)
+# Start both (Edit in background)
 start_both() {
     echo -e "${GREEN}Starting ADAPT Edit in background...${NC}"
     cd "$SCRIPT_DIR/ADAPT_edit"
     python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 &
-    VIEWER_PID=$!
-    echo -e "${BLUE}Viewer PID: $VIEWER_PID${NC}"
+    EDIT_PID=$!
+    echo -e "${BLUE}Edit PID: $EDIT_PID${NC}"
     
     sleep 2
     
@@ -94,9 +94,9 @@ start_both() {
     cd "$SCRIPT_DIR/ADAPT_browser"
     python3 app.py
     
-    # When browser closes, stop viewer
-    echo -e "${YELLOW}Browser closed. Stopping Viewer...${NC}"
-    kill $VIEWER_PID 2>/dev/null || true
+    # When browser closes, stop edit
+    echo -e "${YELLOW}Browser closed. Stopping Edit...${NC}"
+    kill $EDIT_PID 2>/dev/null || true
 }
 
 # Main
@@ -104,8 +104,8 @@ case "${1:-help}" in
     browser)
         start_browser
         ;;
-    viewer)
-        start_viewer
+    edit)
+        start_edit
         ;;
     both)
         start_both
