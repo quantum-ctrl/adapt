@@ -43,6 +43,19 @@ except ImportError as e:
     def load_data_file(path):
         raise ImportError("Shared loaders not available")
 
+try:
+    from utils.config import get_data_dir, get_host, get_max_upload_size, get_port
+except ImportError as e:
+    print(f"WARNING: Could not import config helpers: {e}")
+    def get_data_dir(default_base):
+        return os.path.join(default_base, "data")
+    def get_host(default="127.0.0.1"):
+        return os.environ.get("ADAPT_HOST", default)
+    def get_port(default=8000):
+        return int(os.environ.get("ADAPT_PORT", default))
+    def get_max_upload_size(default=2_000_000_000):
+        return int(os.environ.get("ADAPT_MAX_UPLOAD_SIZE", default))
+
 # Import Processing Modules with granular error handling
 align_error = None
 fermi_fit_error = None
@@ -101,9 +114,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Constants
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-MAX_UPLOAD_SIZE = 2_000_000_000  # 2GB limit for uploaded files
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = get_data_dir(APP_DIR)
+MAX_UPLOAD_SIZE = get_max_upload_size()
 
 # Track temporary uploaded files for cleanup
 TEMP_FILES = []
@@ -1047,13 +1060,11 @@ async def crop_endpoint(request: CropRequest):
 
 # Mount static files
 # We'll create the static directory next
-static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+static_dir = os.path.join(APP_DIR, "static")
 if not os.path.exists(static_dir):
     os.makedirs(static_dir)
 
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    host = os.environ.get("ADAPT_HOST", "127.0.0.1")
-    port = int(os.environ.get("ADAPT_PORT", "8000"))
-    uvicorn.run("server:app", host=host, port=port, reload=True)
+    uvicorn.run("server:app", host=get_host(), port=get_port(), reload=True)
