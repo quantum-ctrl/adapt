@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import logging
 import numpy as np
 import shutil
 import atexit
@@ -8,12 +9,14 @@ from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional, List
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import tempfile
 import xarray as xr
 from io import BytesIO
+
+logger = logging.getLogger(__name__)
 # Add shared module to path for session manager
 _shared_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
 if _shared_path not in sys.path:
@@ -461,16 +464,11 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
                 "axes": axes,
                 "data_info": data_info
             }
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": str(e),
-                "traceback": error_details 
-            }
-        )
+        logger.exception("Failed to load metadata for %s", file_path)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.get("/api/data")
 async def get_data(path: str = Query(..., description="Path to the file")):
@@ -498,16 +496,11 @@ async def get_data(path: str = Query(..., description="Path to the file")):
             data = data.astype(np.float32)
 
         return Response(content=data.tobytes(), media_type="application/octet-stream")
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": str(e),
-                "traceback": error_details
-            }
-        )
+        logger.exception("Failed to load data for %s", file_path)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
