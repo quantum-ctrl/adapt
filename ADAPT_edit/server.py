@@ -80,6 +80,12 @@ except ImportError as e:
     print(f"WARNING: Could not import edit module: {e}")
     def crop_data(*args, **kwargs): raise ImportError(f"Crop not available: {e}")
 
+try:
+    from processing.io import save_processed_dataarray
+except ImportError as e:
+    print(f"WARNING: Could not import processing I/O helpers: {e}")
+    def save_processed_dataarray(*args, **kwargs): raise ImportError(f"Processing I/O not available: {e}")
+
 app = FastAPI(title="ARPES Visualization Tool")
 
 # Enable CORS
@@ -637,39 +643,7 @@ async def align_data(request: AlignRequest):
         # Add processed flag
         aligned.attrs['is_adapt_processed'] = True
 
-        # Save to new temp file
-        import h5py
-        # Always save as .h5 because we write HDF5/NetCDF format
-        suffix = ".h5"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="aligned_") as tmp:
-            save_path = tmp.name
-            TEMP_FILES.append(save_path)
-        
-        # Save using xarray to netcdf/h5 if possible, or custom saver
-        # Since we use h5py loaders usually, let's try to save as h5 using a simple saver or xarray's to_netcdf
-        # For compatibility with our loader, xarray to_netcdf (h5) is best if h5netcdf is installed.
-        # Otherwise, we might need a simple save function. 
-        # For now, let's assume we can save to netcdf/h5 which is standard for xarray.
-        try:
-            # Drop complex attributes that fail serialization
-            # simplified_attrs = {k: str(v) for k, v in aligned.attrs.items()}
-            # aligned.attrs = simplified_attrs
-            aligned.to_netcdf(save_path, engine='h5netcdf')
-        except Exception as e:
-            # Fallback: if h5netcdf fails, try scipy or just pickle? No, pickle is bad for interop.
-            # Let's try native h5py if available, or just fail for now.
-            # Actually, standard ARPES data in this project seems to be HDF5. 
-            with h5py.File(save_path, 'w') as f:
-                ds = f.create_dataset('data', data=aligned.values)
-                # Save coords
-                for coord in aligned.coords:
-                    f.create_dataset(coord, data=aligned.coords[coord].values)
-                # Save attrs
-                for k, v in aligned.attrs.items():
-                    try:
-                        f.attrs[k] = v
-                    except (TypeError, ValueError, OSError):
-                        f.attrs[k] = str(v)
+        save_path = save_processed_dataarray(aligned, prefix="aligned_", temp_files=TEMP_FILES)
                         
         return {"filename": save_path}
         
@@ -762,25 +736,7 @@ async def convert_k(request: ConvertKRequest):
         # Add processed flag
         converted.attrs['is_adapt_processed'] = True
 
-        # Save to new temp file
-        import h5py
-        suffix = ".h5"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="k_converted_") as tmp:
-            save_path = tmp.name
-            TEMP_FILES.append(save_path)
-        
-        try:
-            converted.to_netcdf(save_path, engine='h5netcdf')
-        except Exception as e:
-            with h5py.File(save_path, 'w') as f:
-                ds = f.create_dataset('data', data=converted.values)
-                for coord in converted.coords:
-                    f.create_dataset(coord, data=converted.coords[coord].values)
-                for k, v in converted.attrs.items():
-                    try:
-                        f.attrs[k] = v
-                    except (TypeError, ValueError, OSError):
-                        f.attrs[k] = str(v)
+        save_path = save_processed_dataarray(converted, prefix="k_converted_", temp_files=TEMP_FILES)
                         
         return {"filename": save_path}
 
@@ -1080,25 +1036,7 @@ async def crop_endpoint(request: CropRequest):
         cropped.attrs['is_adapt_processed'] = True
         cropped.attrs['crop_ranges'] = str(request.ranges)
 
-        # Save to new temp file
-        import h5py
-        suffix = ".h5"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="cropped_") as tmp:
-            save_path = tmp.name
-            TEMP_FILES.append(save_path)
-        
-        try:
-            cropped.to_netcdf(save_path, engine='h5netcdf')
-        except Exception as e:
-            with h5py.File(save_path, 'w') as f:
-                ds = f.create_dataset('data', data=cropped.values)
-                for coord in cropped.coords:
-                    f.create_dataset(coord, data=cropped.coords[coord].values)
-                for k, v in cropped.attrs.items():
-                    try:
-                        f.attrs[k] = v
-                    except (TypeError, ValueError, OSError):
-                        f.attrs[k] = str(v)
+        save_path = save_processed_dataarray(cropped, prefix="cropped_", temp_files=TEMP_FILES)
                         
         return {"filename": save_path}
         

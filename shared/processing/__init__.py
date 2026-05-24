@@ -73,6 +73,12 @@ try:
 except ImportError:
     pass
 
+# I/O helpers (need xarray, h5py)
+try:
+    from .io import save_processed_dataarray
+except ImportError:
+    pass
+
 # Angle to K
 try:
     from .angle_to_k import (
@@ -186,7 +192,6 @@ __all__ = [
     'extract_and_export',
     'overlay_bands_on_data',
 ]
-
 
 
 
