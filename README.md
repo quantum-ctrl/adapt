@@ -56,7 +56,11 @@ Select the instructions for your operating system:
     ```
 5.  **Install Dependencies**:
     ```bash
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
+    ```
+    You can also use the helper script:
+    ```bash
+    ./run.sh install
     ```
 
 
@@ -74,7 +78,7 @@ Select the instructions for your operating system:
     ```
 4.  **Install Dependencies**:
     ```powershell
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
     ```
 
 
@@ -94,7 +98,11 @@ Select the instructions for your operating system:
     ```
 4.  **Install Dependencies**:
     ```bash
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
+    ```
+    You can also use the helper script:
+    ```bash
+    ./run.sh install
     ```
 
 
@@ -104,6 +112,11 @@ Select the instructions for your operating system:
 
 The specific components can be launched using the `run.sh` helper script.
 
+If your shell says the script is not executable, run:
+```bash
+chmod +x run.sh
+```
+
 #### Launching Both (Recommended)
 ```bash
 ./run.sh both
@@ -111,16 +124,23 @@ The specific components can be launched using the `run.sh` helper script.
 
 #### Launching Components Individually
 - **Data Browser**: `./run.sh browser`
-- **3D Viewer**: `./run.sh viewer`
+- **ADAPT Edit / 3D Viewer**: `./run.sh edit`
+
+ADAPT Edit is served at `http://127.0.0.1:8000` by default. To use a different
+host or port:
+```bash
+ADAPT_HOST=127.0.0.1 ADAPT_PORT=8001 ./run.sh edit
+```
 
 ### Windows
 
-To run both the Browser and Viewer, open two terminals and run:
+To run both the Browser and ADAPT Edit, open two terminals from the project
+folder after activating `.venv`.
 
-**Terminal 1 (Viewer):**
+**Terminal 1 (ADAPT Edit / 3D Viewer):**
 ```powershell
 cd ADAPT_edit
-python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 **Terminal 2 (Browser):**
@@ -148,4 +168,3 @@ Special thanks to:
 
 *   Procopios Constantinou for the [ARPEScape](https://github.com/c0deta1ker/ARPEScape) project.
 *   Craig Polley for the [pesto](https://gitlab.com/flashingLEDs/pesto) project.
-

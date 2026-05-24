@@ -40,6 +40,7 @@ except ImportError:
 # Path to shared/ was added to sys.path above
 try:
     from loaders import load_adress as load_hdf5_data
+    from loaders import load_sis as load_sis_data
     from loaders import load_ses as load_ses_zip
     from loaders import load_ibw
     from loaders import load_pxt
@@ -47,6 +48,8 @@ except ImportError as e:
     print(f"WARNING: Could not import loaders: {e}")
     # Fallback stubs if loaders are not available
     def load_hdf5_data(path):
+        raise ImportError("Shared loaders not available")
+    def load_sis_data(path):
         raise ImportError("Shared loaders not available")
     def load_ses_zip(path):
         raise ImportError("Shared loaders not available")
@@ -97,7 +100,11 @@ app = FastAPI(title="ARPES Visualization Tool")
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -156,7 +163,15 @@ def _load_data_file(file_path: str):
     ext = os.path.splitext(file_path)[1].lower()
     
     if ext in ('.h5', '.nxs', '.hdf5'):
-        return load_hdf5_data(file_path)
+        try:
+            return load_hdf5_data(file_path)
+        except Exception as adress_error:
+            try:
+                return load_sis_data(file_path)
+            except Exception as sis_error:
+                raise ValueError(
+                    f"Failed to load HDF5 file.\nADRESS: {adress_error}\nSIS: {sis_error}"
+                ) from sis_error
     elif ext == '.ibw':
         return load_ibw(file_path)
     elif ext == '.zip':
@@ -1130,4 +1145,6 @@ if not os.path.exists(static_dir):
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.environ.get("ADAPT_HOST", "127.0.0.1")
+    port = int(os.environ.get("ADAPT_PORT", "8000"))
+    uvicorn.run("server:app", host=host, port=port, reload=True)

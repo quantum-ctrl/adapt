@@ -617,8 +617,8 @@ class MainWindow(QMainWindow):
             metadata = {
                 "shape": list(data_result.shape) if data_result.shape else None,
                 "dtype": str(data_result.dtype) if data_result.dtype else None,
-                "axes": data_result.axes if hasattr(data_result, 'axes') else {},
-                "attrs": data_result.metadata if hasattr(data_result, 'metadata') else {},
+                "axes": self._to_session_jsonable(data_result.coords),
+                "attrs": self._to_session_jsonable(data_result.meta),
             }
         
         # Write session
@@ -634,7 +634,11 @@ class MainWindow(QMainWindow):
             return
         
         # Open Viewer in default browser
-        viewer_url = "http://localhost:8000/?session=1"
+        viewer_host = os.environ.get("ADAPT_HOST", "127.0.0.1")
+        if viewer_host in ("0.0.0.0", "::"):
+            viewer_host = "127.0.0.1"
+        viewer_port = os.environ.get("ADAPT_PORT", "8000")
+        viewer_url = f"http://{viewer_host}:{viewer_port}/?session=1"
         logger.info(f"Opening Viewer: {viewer_url}")
         
         try:
@@ -647,3 +651,15 @@ class MainWindow(QMainWindow):
                 "Browser Error",
                 f"Failed to open web browser:\n{e}\n\nPlease manually navigate to:\n{viewer_url}"
             )
+
+    def _to_session_jsonable(self, value):
+        """Convert numpy-heavy metadata into values json.dump can handle."""
+        if isinstance(value, dict):
+            return {str(k): self._to_session_jsonable(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._to_session_jsonable(v) for v in value]
+        if hasattr(value, "tolist"):
+            return self._to_session_jsonable(value.tolist())
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)

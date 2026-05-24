@@ -7,6 +7,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 # Activate virtual environment if it exists
 if [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
     echo -e "${YELLOW}Activating virtual environment...${NC}"
@@ -19,12 +26,8 @@ fi
 # Set Materials Project API key for BZ calculations
 export MP_API_KEY="sMqgB9CvxOwdio2tBv3XYZm3uDCYaH5c"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+ADAPT_HOST="${ADAPT_HOST:-127.0.0.1}"
+ADAPT_PORT="${ADAPT_PORT:-8000}"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║  ADAPT - ARPES Data Analysis & Processing Tool ║${NC}"
@@ -75,16 +78,16 @@ start_browser() {
 
 # Start Edit
 start_edit() {
-    echo -e "${GREEN}Starting ADAPT Edit on http://localhost:8000${NC}"
+    echo -e "${GREEN}Starting ADAPT Edit on http://${ADAPT_HOST}:${ADAPT_PORT}${NC}"
     cd "$SCRIPT_DIR/ADAPT_edit"
-    python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+    python3 -m uvicorn server:app --host "$ADAPT_HOST" --port "$ADAPT_PORT" --reload
 }
 
 # Start both (Edit in background)
 start_both() {
     echo -e "${GREEN}Starting ADAPT Edit in background...${NC}"
     cd "$SCRIPT_DIR/ADAPT_edit"
-    python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 &
+    python3 -m uvicorn server:app --host "$ADAPT_HOST" --port "$ADAPT_PORT" &
     EDIT_PID=$!
     echo -e "${BLUE}Edit PID: $EDIT_PID${NC}"
     
