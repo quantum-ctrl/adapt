@@ -20,6 +20,8 @@ from .constants import (
 )
 
 from .config import (
+    allow_filesystem_browse,
+    get_browse_roots,
     get_data_dir,
     get_host,
     get_max_upload_size,
@@ -41,6 +43,8 @@ __all__ = [
     "ELECTRON_MASS_EV",
     "HC_EV_ANGSTROM",
     # Configuration
+    "allow_filesystem_browse",
+    "get_browse_roots",
     "get_data_dir",
     "get_host",
     "get_max_upload_size",

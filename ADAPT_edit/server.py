@@ -44,9 +44,20 @@ except ImportError as e:
         raise ImportError("Shared loaders not available")
 
 try:
-    from utils.config import get_data_dir, get_host, get_max_upload_size, get_port
+    from utils.config import (
+        allow_filesystem_browse,
+        get_browse_roots,
+        get_data_dir,
+        get_host,
+        get_max_upload_size,
+        get_port,
+    )
 except ImportError as e:
     print(f"WARNING: Could not import config helpers: {e}")
+    def allow_filesystem_browse(default=False):
+        return default
+    def get_browse_roots(data_dir):
+        return [data_dir, os.path.expanduser("~")]
     def get_data_dir(default_base):
         return os.path.join(default_base, "data")
     def get_host(default="127.0.0.1"):
@@ -117,6 +128,7 @@ app.add_middleware(
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = get_data_dir(APP_DIR)
 MAX_UPLOAD_SIZE = get_max_upload_size()
+BROWSE_ROOTS = get_browse_roots(DATA_DIR)
 
 # Track temporary uploaded files for cleanup
 TEMP_FILES = []
@@ -149,6 +161,19 @@ def cleanup_temp_files():
                 print(f"Failed to clean up {tmp}: {e}")
 
 atexit.register(cleanup_temp_files)
+
+
+def _path_within_roots(path: str, roots: List[str]) -> bool:
+    """Return True if path is inside one of the configured browse roots."""
+    real_path = os.path.realpath(path)
+    for root in roots:
+        real_root = os.path.realpath(root)
+        try:
+            if os.path.commonpath([real_path, real_root]) == real_root:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _load_data_file(file_path: str):
@@ -243,10 +268,9 @@ async def browse_files(path: str = Query(None, description="Absolute path to bro
     
     # Resolve path
     path = os.path.abspath(path)
-    
-    # Note: This allows browsing the entire filesystem for local use.
-    # For public deployment, consider adding authentication or path restrictions
-    # via environment variables (e.g., RESTRICT_BROWSING=true).
+
+    if not allow_filesystem_browse() and not _path_within_roots(path, BROWSE_ROOTS):
+        raise HTTPException(status_code=403, detail="Path is outside allowed browse roots")
     
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Path not found")
@@ -268,8 +292,12 @@ async def browse_files(path: str = Query(None, description="Absolute path to bro
             elif item.lower().endswith(('.h5', '.nxs', '.hdf5', '.ibw', '.zip', '.pxt', '.pxp')):
                 files.append(item)
         
+        parent = os.path.dirname(path)
+        if not allow_filesystem_browse() and not _path_within_roots(parent, BROWSE_ROOTS):
+            parent = path
+
         return {
-            "parent": os.path.dirname(path),
+            "parent": parent,
             "current": path,
             "dirs": sorted(dirs),
             "files": sorted(files)
