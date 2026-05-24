@@ -7,7 +7,7 @@ output format for the UI layer.
 
 import os
 import sys
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import numpy as np
 
@@ -19,6 +19,12 @@ from utils.logger import logger
 _shared_loaders_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
 if _shared_loaders_path not in sys.path:
     sys.path.insert(0, _shared_loaders_path)
+
+from loaders import (
+    SUPPORTED_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS,
+    get_file_type,
+    load_data_file,
+)
 
 
 @dataclass
@@ -78,15 +84,7 @@ class DataManager(QObject):
     loading_error = Signal(str)     # error message
     loading_progress = Signal(str)  # status message
     
-    # Supported extensions
-    SUPPORTED_EXTENSIONS = {
-        'h5': 'HDF5',
-        'hdf5': 'HDF5', 
-        'ibw': 'IBW',
-        'zip': 'ZIP',
-        'pxt': 'PXT',
-        'pxp': 'PXP'
-    }
+    SUPPORTED_EXTENSIONS = LOADER_SUPPORTED_EXTENSIONS
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -108,8 +106,7 @@ class DataManager(QObject):
     @classmethod
     def get_file_type(cls, filepath: str) -> Optional[str]:
         """Get the file type label."""
-        ext = os.path.splitext(filepath)[1].lower().lstrip('.')
-        return cls.SUPPORTED_EXTENSIONS.get(ext)
+        return get_file_type(filepath)
     
     @staticmethod
     def load_file_sync(filepath: str) -> DataResult:
@@ -126,39 +123,8 @@ class DataManager(QObject):
             ValueError: If file type is not supported
             FileNotFoundError: If file doesn't exist
         """
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"File not found: {filepath}")
-        
-        ext = os.path.splitext(filepath)[1].lower().lstrip('.')
-        
-        # Import loaders lazily
-        if ext in ('h5', 'hdf5'):
-            # Try ADRESS loader first, then SIS
-            try:
-                from loaders import load_adress
-                da = load_adress(filepath)
-            except Exception as e1:
-                try:
-                    from loaders import load_sis
-                    da = load_sis(filepath)
-                except Exception as e2:
-                    raise ValueError(f"Failed to load HDF5 file.\nADRESS: {e1}\nSIS: {e2}")
-                    
-        elif ext == 'ibw':
-            from loaders import load_ibw
-            da = load_ibw(filepath)
-            
-        elif ext == 'zip':
-            from loaders import load_ses
-            da = load_ses(filepath)
+        da = load_data_file(filepath)
 
-        elif ext in ('pxt', 'pxp'):
-            from loaders import load_pxt
-            da = load_pxt(filepath)
-            
-        else:
-            raise ValueError(f"Unsupported file type: {ext}")
-        
         # Convert xarray.DataArray to DataResult
         return DataManager._convert_xarray(da, filepath)
     

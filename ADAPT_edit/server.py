@@ -36,26 +36,11 @@ except ImportError:
     def clear_session():
         return False
 
-# Import the data loaders from the shared loaders package
-# Path to shared/ was added to sys.path above
 try:
-    from loaders import load_adress as load_hdf5_data
-    from loaders import load_sis as load_sis_data
-    from loaders import load_ses as load_ses_zip
-    from loaders import load_ibw
-    from loaders import load_pxt
+    from loaders import load_data_file
 except ImportError as e:
     print(f"WARNING: Could not import loaders: {e}")
-    # Fallback stubs if loaders are not available
-    def load_hdf5_data(path):
-        raise ImportError("Shared loaders not available")
-    def load_sis_data(path):
-        raise ImportError("Shared loaders not available")
-    def load_ses_zip(path):
-        raise ImportError("Shared loaders not available")
-    def load_ibw(path):
-        raise ImportError("Shared loaders not available")
-    def load_pxt(path):
+    def load_data_file(path):
         raise ImportError("Shared loaders not available")
 
 # Import Processing Modules with granular error handling
@@ -160,26 +145,12 @@ def _load_data_file(file_path: str):
     Raises:
         HTTPException: If file type is not supported
     """
-    ext = os.path.splitext(file_path)[1].lower()
-    
-    if ext in ('.h5', '.nxs', '.hdf5'):
-        try:
-            return load_hdf5_data(file_path)
-        except Exception as adress_error:
-            try:
-                return load_sis_data(file_path)
-            except Exception as sis_error:
-                raise ValueError(
-                    f"Failed to load HDF5 file.\nADRESS: {adress_error}\nSIS: {sis_error}"
-                ) from sis_error
-    elif ext == '.ibw':
-        return load_ibw(file_path)
-    elif ext == '.zip':
-        return load_ses_zip(file_path)
-    elif ext in ('.pxt', '.pxp'):
-        return load_pxt(file_path)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+    try:
+        return load_data_file(file_path)
+    except ValueError as e:
+        if str(e).startswith("Unsupported file type:"):
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        raise
 
 
 @app.get("/api/session")
