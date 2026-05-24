@@ -13,7 +13,7 @@ ADAPT is a comprehensive toolkit designed for the visualization and analysis of 
 *   **Data Browser (Desktop)**: A PyQt-based desktop application for browsing, inspecting, and managing ARPES datasets.
 *   **3D Viewer (Web)**: An interactive web-based 3D visualizer for exploring volumetric ARPES data (EDC, MDC, isoline cuts).
 *   **Integrated Workflow**: Seamlessly switch between the browser and the 3D viewer.
-*   **Data Support**: Supports standard ARPES data formats (HDF5, Igor Binary Wave).
+*   **Data Support**: Supports standard ARPES data formats (HDF5/Nexus, Igor Binary Wave, SES ZIP, PXT/PXP).
 *   **Brillouin Zone Visualization**: 
     *   3D construction from lattice parameters or Materials Project ID.
     *   Interactive intersection plane visualization (Miller indices, distance, custom color).
@@ -132,6 +132,8 @@ host or port:
 ADAPT_HOST=127.0.0.1 ADAPT_PORT=8001 ./run.sh edit
 ```
 
+ADAPT Edit must be running before using **Open with Viewer** from the Browser.
+
 ### Windows
 
 To run both the Browser and ADAPT Edit, open two terminals from the project
@@ -149,11 +151,59 @@ cd ADAPT_browser
 python app.py
 ```
 
+## Supported Data
+
+ADAPT can open:
+
+*   HDF5/Nexus files: `.h5`, `.hdf5`, `.nxs`
+*   Igor Binary Wave files: `.ibw`
+*   SES archives: `.zip`
+*   Igor packed experiment files: `.pxt`, `.pxp`
+
+HDF5 loading tries the ADRESS format first and then falls back to SIS.
+
+## Configuration
+
+These environment variables can be set before starting ADAPT Edit:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `ADAPT_HOST` | `127.0.0.1` | Host used by the web server. |
+| `ADAPT_PORT` | `8000` | Port used by the web server. |
+| `ADAPT_DATA_DIR` | `ADAPT_edit/data` | Directory scanned by `/api/files`. |
+| `ADAPT_MAX_UPLOAD_SIZE` | `2000000000` | Maximum upload size in bytes. |
+| `ADAPT_BROWSE_ROOTS` | data dir and home | Path-list of directories allowed in the web file browser. |
+| `ADAPT_ALLOW_FILESYSTEM_BROWSE` | `false` | Set to `1` to allow unrestricted local filesystem browsing. |
+
+On macOS/Linux, separate multiple `ADAPT_BROWSE_ROOTS` entries with `:`. On Windows, use `;`.
+
+## Testing
+
+Run the smoke test suite from the project root:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Run a Python syntax/import compile check:
+
+```bash
+python -m compileall ADAPT_browser ADAPT_edit shared tests
+```
+
+## Troubleshooting
+
+*   **Port already in use**: start Edit with another port, for example `ADAPT_PORT=8001 ./run.sh edit`.
+*   **Browser opens Edit but the page does not load**: start ADAPT Edit first, then use **Open with Viewer** again.
+*   **A directory is blocked in the web file browser**: add it to `ADAPT_BROWSE_ROOTS`, or set `ADAPT_ALLOW_FILESYSTEM_BROWSE=1` for unrestricted local browsing.
+*   **Python dependency errors**: activate `.venv` and run `python -m pip install -r requirements.txt`.
+
 ## Project Structure
 
 *   `ADAPT_browser/`: Desktop GUI application code.
 *   `ADAPT_edit/`: Web server and visualization code.
 *   `shared/`: Shared utilities and libraries.
+*   `tests/`: Smoke tests for shared loading, saving, and configuration.
 *   `requirements.txt`: Python package dependencies.
 *   `run.sh`: Main launcher script.
 
