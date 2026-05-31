@@ -1,15 +1,12 @@
 import os
-import sys
 import unittest
 
 import numpy as np
 import xarray as xr
 
 
-sys.path.insert(0, os.path.abspath("shared"))
-
-from loaders import load_data_file  # noqa: E402
-from processing.io import save_processed_dataarray  # noqa: E402
+from shared.loaders import load_data_file
+from shared.processing.io import save_processed_dataarray
 
 
 class ProcessingIOTest(unittest.TestCase):

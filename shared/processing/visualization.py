@@ -315,11 +315,11 @@ def plot_2d_data(data, title="", figsize=(14, 7), cmap='bone_r', show_crosshair=
     from matplotlib.widgets import Slider, RadioButtons, CheckButtons, RangeSlider
     
     # Import enhancement functions
-    from processing.enhancement import (
+    from shared.processing.enhancement import (
         clahe, histogram_equalize, gamma_correction,
         curvature_luo, curvature_second_derivative
     )
-    from processing.background import shirley_background
+    from shared.processing.background import shirley_background
     
     dims = list(data.dims)
     if len(dims) != 2:

@@ -510,7 +510,7 @@ if __name__ == "__main__":
     import os
     
     try:
-        import loaders.load_adress_data as loader
+        import shared.loaders.load_adress_data as loader
     except ImportError:
         print("Error: Cannot import loaders. Please run from project root or install package.")
         sys.exit(1)

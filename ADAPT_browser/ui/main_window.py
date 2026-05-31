@@ -3,7 +3,6 @@ Main Window - Primary application window with all panels.
 """
 
 import os
-import sys
 import webbrowser
 
 from PySide6.QtWidgets import (
@@ -18,16 +17,11 @@ from PySide6.QtGui import QAction, QIcon, QPalette, QColor
 from .directory_panel import DirectoryPanel
 from .file_list_panel import FileListPanel
 from .viewer_panel import ViewerPanel
-from core.data_manager import DataManager, DataResult
-from utils.logger import logger
-
-# Add shared module to path for session manager
-_shared_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
-if _shared_path not in sys.path:
-    sys.path.insert(0, _shared_path)
+from ADAPT_browser.core.data_manager import DataManager, DataResult
+from ADAPT_browser.utils.logger import logger
 
 try:
-    from session import write_session
+    from shared.session import write_session
 except ImportError:
     # Fallback if shared module not available
     def write_session(file_path, metadata=None):

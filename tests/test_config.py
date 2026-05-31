@@ -1,12 +1,9 @@
 import os
-import sys
 import unittest
 from unittest.mock import patch
 
 
-sys.path.insert(0, os.path.abspath("shared"))
-
-from utils.config import (  # noqa: E402
+from shared.utils.config import (
     allow_filesystem_browse,
     get_browse_roots,
     get_data_dir,

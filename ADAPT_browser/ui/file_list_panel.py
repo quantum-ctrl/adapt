@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt, QSize, QObject, QRunnable, QThreadPool
 from PySide6.QtGui import QIcon, QFont, QImage, QPixmap, QPainter, QColor
 
-from core.data_manager import DataManager, filter_files_by_type
+from ADAPT_browser.core.data_manager import DataManager, filter_files_by_type
 
 
 # File type icons/emojis (fallback when no thumbnail available)

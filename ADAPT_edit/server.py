@@ -1,5 +1,4 @@
 import os
-import sys
 import glob
 import logging
 import numpy as np
@@ -17,20 +16,16 @@ import xarray as xr
 from io import BytesIO
 
 logger = logging.getLogger(__name__)
-# Add shared module to path for session manager
-_shared_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
-if _shared_path not in sys.path:
-    sys.path.insert(0, _shared_path)
 
 try:
-    from brillouin_zone import generate_bz, load_from_parameters, load_from_material_id, plot_bz_matplotlib, get_bz_intersection_plane
+    from shared.brillouin_zone import generate_bz, load_from_parameters, load_from_material_id, plot_bz_matplotlib, get_bz_intersection_plane
 except ImportError as e:
     import traceback
     traceback.print_exc()
     print(f"WARNING: Could not import brillouin_zone module: {e}")
 
 try:
-    from session import read_session, clear_session
+    from shared.session import read_session, clear_session
 except ImportError:
     # Fallback if shared module not available
     print("WARNING: Session manager not available. Session integration disabled.")
@@ -40,14 +35,14 @@ except ImportError:
         return False
 
 try:
-    from loaders import load_data_file
+    from shared.loaders import load_data_file
 except ImportError as e:
     print(f"WARNING: Could not import loaders: {e}")
     def load_data_file(path):
         raise ImportError("Shared loaders not available")
 
 try:
-    from utils.config import (
+    from shared.utils.config import (
         allow_filesystem_browse,
         get_browse_roots,
         get_data_dir,
@@ -76,7 +71,7 @@ fermi_fit_error = None
 
 # 1. Align Module
 try:
-    from processing.align import align_axis, align_energy, align_energy_3d
+    from shared.processing.align import align_axis, align_energy, align_energy_3d
 except ImportError as e:
     align_error = str(e)
     print(f"WARNING: Could not import alignment module: {e}")
@@ -86,7 +81,7 @@ except ImportError as e:
 
 # 2. Fermi Edge Fit Module
 try:
-    from processing.fermi_edge_fit import fit_fermi_edge, fit_fermi_edge_3d
+    from shared.processing.fermi_edge_fit import fit_fermi_edge, fit_fermi_edge_3d
 except ImportError as e:
     fermi_fit_error = str(e)
     print(f"WARNING: Could not import fermi fit module: {e}")
@@ -95,20 +90,20 @@ except ImportError as e:
 
 # 3. Angle to K Module
 try:
-    from processing.angle_to_k import convert_angle_to_k
+    from shared.processing.angle_to_k import convert_angle_to_k
 except ImportError as e:
     print(f"WARNING: Could not import angle_to_k module: {e}")
     def convert_angle_to_k(*args, **kwargs): raise ImportError(f"Angle to K conversion not available: {e}")
 
 # 4. Edit Module (Crop)
 try:
-    from processing.edit import crop_data
+    from shared.processing.edit import crop_data
 except ImportError as e:
     print(f"WARNING: Could not import edit module: {e}")
     def crop_data(*args, **kwargs): raise ImportError(f"Crop not available: {e}")
 
 try:
-    from processing.io import save_processed_dataarray
+    from shared.processing.io import save_processed_dataarray
 except ImportError as e:
     print(f"WARNING: Could not import processing I/O helpers: {e}")
     def save_processed_dataarray(*args, **kwargs): raise ImportError(f"Processing I/O not available: {e}")
@@ -835,7 +830,7 @@ async def calculate_bz(request: BZRequest):
              # We need to import it here or at top. 
              # bz_visualization handles imports, but we need to call plot_bz_plotly
              # Let's import it from the shared module if available or just use the backend dispatcher
-             from brillouin_zone import plot_bz_plotly
+             from shared.brillouin_zone import plot_bz_plotly
              import plotly.graph_objects as go
              
              title = request.crystal_name if request.crystal_name else None
@@ -1088,4 +1083,4 @@ if not os.path.exists(static_dir):
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host=get_host(), port=get_port(), reload=True)
+    uvicorn.run("ADAPT_edit.server:app", host=get_host(), port=get_port(), reload=True)

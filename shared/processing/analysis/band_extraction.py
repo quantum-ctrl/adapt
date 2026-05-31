@@ -50,7 +50,7 @@ try:
     from ..enhancement.curvature import curvature_luo, curvature_second_derivative, auto_curvature
 except ImportError:
     try:
-        from processing.enhancement.curvature import curvature_luo, curvature_second_derivative, auto_curvature
+        from shared.processing.enhancement.curvature import curvature_luo, curvature_second_derivative, auto_curvature
     except ImportError:
         curvature_luo = None
         curvature_second_derivative = None

@@ -1,5 +1,4 @@
 import os
-import sys
 import tempfile
 import unittest
 
@@ -7,9 +6,7 @@ import h5py
 import numpy as np
 
 
-sys.path.insert(0, os.path.abspath("shared"))
-
-from loaders import get_file_type, is_supported_file, load_data_file  # noqa: E402
+from shared.loaders import get_file_type, is_supported_file, load_data_file
 
 
 class UnifiedLoaderTest(unittest.TestCase):

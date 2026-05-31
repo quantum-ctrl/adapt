@@ -33,123 +33,47 @@ git clone https://github.com/quantum-ctrl/ADAPT.git
 cd ADAPT
 ```
 
-### 2. Environment Setup
+### 2. Install uv
 
-Select the instructions for your operating system:
+ADAPT uses [uv](https://docs.astral.sh/uv/) for dependency management and launching.
 
-#### macOS
-1.  **Install Homebrew** (if not already installed):
-    ```bash
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    ```
-2.  **Install Python 3**:
-    ```bash
-    brew install python
-    ```
-3.  **Create Virtual Environment**:
-    ```bash
-    python3 -m venv .venv
-    ```
-4.  **Activate Virtual Environment**:
-    ```bash
-    source .venv/bin/activate
-    ```
-5.  **Install Dependencies**:
-    ```bash
-    python -m pip install -r requirements.txt
-    ```
-    You can also use the helper script:
-    ```bash
-    ./run.sh install
-    ```
-
+#### macOS / Linux
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 #### Windows
-1.  **Install Python 3**:
-    Download and install Python 3.9+ from [python.org](https://www.python.org/downloads/). Ensure you check **"Add Python to PATH"** during installation.
-2.  **Create Virtual Environment**:
-    Open PowerShell or Command Prompt and run:
-    ```powershell
-    python -m venv .venv
-    ```
-3.  **Activate Virtual Environment**:
-    ```powershell
-    .\.venv\Scripts\activate
-    ```
-4.  **Install Dependencies**:
-    ```powershell
-    python -m pip install -r requirements.txt
-    ```
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
+### 3. Install Dependencies
 
-#### Linux (Ubuntu/Debian)
-1.  **Install System Dependencies**:
-    ```bash
-    sudo apt update
-    sudo apt install python3 python3-venv python3-pip git
-    ```
-2.  **Create Virtual Environment**:
-    ```bash
-    python3 -m venv .venv
-    ```
-3.  **Activate Virtual Environment**:
-    ```bash
-    source .venv/bin/activate
-    ```
-4.  **Install Dependencies**:
-    ```bash
-    python -m pip install -r requirements.txt
-    ```
-    You can also use the helper script:
-    ```bash
-    ./run.sh install
-    ```
+From the project root:
+
+```bash
+uv sync
+```
 
 
 ## Usage
 
-### macOS / Linux (using `run.sh`)
-
-The specific components can be launched using the `run.sh` helper script.
-
-If your shell says the script is not executable, run:
-```bash
-chmod +x run.sh
-```
-
 #### Launching Both (Recommended)
 ```bash
-./run.sh both
+uv run adapt
 ```
 
 #### Launching Components Individually
-- **Data Browser**: `./run.sh browser`
-- **ADAPT Edit / 3D Viewer**: `./run.sh edit`
+- **Data Browser**: `uv run adapt browser`
+- **ADAPT Edit / 3D Viewer**: `uv run adapt edit`
 
 ADAPT Edit is served at `http://127.0.0.1:8000` by default. To use a different
 host or port:
 ```bash
-ADAPT_HOST=127.0.0.1 ADAPT_PORT=8001 ./run.sh edit
+uv run adapt edit --host 127.0.0.1 --port 8001
 ```
 
 ADAPT Edit must be running before using **Open with Viewer** from the Browser.
-
-### Windows
-
-To run both the Browser and ADAPT Edit, open two terminals from the project
-folder after activating `.venv`.
-
-**Terminal 1 (ADAPT Edit / 3D Viewer):**
-```powershell
-cd ADAPT_edit
-python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
-```
-
-**Terminal 2 (Browser):**
-```powershell
-cd ADAPT_browser
-python app.py
-```
 
 ## Supported Data
 
@@ -182,21 +106,21 @@ On macOS/Linux, separate multiple `ADAPT_BROWSE_ROOTS` entries with `:`. On Wind
 Run the smoke test suite from the project root:
 
 ```bash
-python -m unittest discover -s tests
+uv run python -m unittest discover -s tests
 ```
 
 Run a Python syntax/import compile check:
 
 ```bash
-python -m compileall ADAPT_browser ADAPT_edit shared tests
+uv run python -m compileall ADAPT_browser ADAPT_edit shared tests
 ```
 
 ## Troubleshooting
 
-*   **Port already in use**: start Edit with another port, for example `ADAPT_PORT=8001 ./run.sh edit`.
+*   **Port already in use**: start Edit with another port, for example `uv run adapt edit --port 8001`.
 *   **Browser opens Edit but the page does not load**: start ADAPT Edit first, then use **Open with Viewer** again.
 *   **A directory is blocked in the web file browser**: add it to `ADAPT_BROWSE_ROOTS`, or set `ADAPT_ALLOW_FILESYSTEM_BROWSE=1` for unrestricted local browsing.
-*   **Python dependency errors**: activate `.venv` and run `python -m pip install -r requirements.txt`.
+*   **Python dependency errors**: run `uv sync` from the project root.
 
 ## Project Structure
 
@@ -204,8 +128,7 @@ python -m compileall ADAPT_browser ADAPT_edit shared tests
 *   `ADAPT_edit/`: Web server and visualization code.
 *   `shared/`: Shared utilities and libraries.
 *   `tests/`: Smoke tests for shared loading, saving, and configuration.
-*   `requirements.txt`: Python package dependencies.
-*   `run.sh`: Main launcher script.
+*   `pyproject.toml`: Python package metadata, dependencies, and `adapt` CLI entry point.
 
 
 ## License

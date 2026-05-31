@@ -14,9 +14,9 @@ from PySide6.QtCore import Signal, Qt
 
 import pyqtgraph as pg
 
-from core.data_manager import DataResult
-from utils.meta_format import format_metadata, format_shape_dtype
-from utils.logger import logger
+from ADAPT_browser.core.data_manager import DataResult
+from ADAPT_browser.utils.meta_format import format_metadata, format_shape_dtype
+from ADAPT_browser.utils.logger import logger
 
 
 class ViewerPanel(QWidget):
@@ -604,4 +604,3 @@ class ViewerPanel(QWidget):
             
         # Update title if any (not currently used but good practice)
         plot_item.setTitle(None)
-

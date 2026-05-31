@@ -6,21 +6,15 @@ output format for the UI layer.
 """
 
 import os
-import sys
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import numpy as np
 
 from PySide6.QtCore import QObject, Signal, QThread
 
-from utils.logger import logger
+from ADAPT_browser.utils.logger import logger
 
-# Add shared loaders to path
-_shared_loaders_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
-if _shared_loaders_path not in sys.path:
-    sys.path.insert(0, _shared_loaders_path)
-
-from loaders import (
+from shared.loaders import (
     SUPPORTED_EXTENSIONS as LOADER_SUPPORTED_EXTENSIONS,
     get_file_type,
     load_data_file,

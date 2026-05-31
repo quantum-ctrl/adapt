@@ -1,0 +1,1 @@
+"""Shared ADAPT libraries."""
