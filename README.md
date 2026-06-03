@@ -58,22 +58,24 @@ uv sync
 
 ## Usage
 
-#### Launching Both (Recommended)
+Start ADAPT with the desktop Browser and web Edit viewer together:
+
 ```bash
 uv run adapt
 ```
 
-#### Launching Components Individually
-- **Data Browser**: `uv run adapt browser`
-- **ADAPT Edit / 3D Viewer**: `uv run adapt edit`
+Optionally open an initial folder:
+
+```bash
+uv run adapt /path/to/data
+```
 
 ADAPT Edit is served at `http://127.0.0.1:8000` by default. To use a different
 host or port:
-```bash
-uv run adapt edit --host 127.0.0.1 --port 8001
-```
 
-ADAPT Edit must be running before using **Open with Viewer** from the Browser.
+```bash
+uv run adapt --host 127.0.0.1 --port 8001
+```
 
 ## Supported Data
 
@@ -112,13 +114,13 @@ uv run python -m unittest discover -s tests
 Run a Python syntax/import compile check:
 
 ```bash
-uv run python -m compileall ADAPT_browser ADAPT_edit shared tests
+uv run python -m compileall ADAPT_browser ADAPT_edit shared tests adapt_cli.py
 ```
 
 ## Troubleshooting
 
-*   **Port already in use**: start Edit with another port, for example `uv run adapt edit --port 8001`.
-*   **Browser opens Edit but the page does not load**: start ADAPT Edit first, then use **Open with Viewer** again.
+*   **Port already in use**: start ADAPT with another port, for example `uv run adapt --port 8001`.
+*   **Browser opens Edit but the page does not load**: confirm the `uv run adapt` terminal is still running and retry **Open with Viewer**.
 *   **A directory is blocked in the web file browser**: add it to `ADAPT_BROWSE_ROOTS`, or set `ADAPT_ALLOW_FILESYSTEM_BROWSE=1` for unrestricted local browsing.
 *   **Python dependency errors**: run `uv sync` from the project root.
 

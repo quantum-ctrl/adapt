@@ -19,6 +19,8 @@ class App {
 
         this.lastCursor = { x: 0, y: 0, z: 0, val: 0 };
         this.selectedFilePath = null;
+        this.historyEntries = [];
+        this.historyIndex = -1;
 
         this.ui = {
             fileBrowserContainer: document.getElementById('file-browser-container'),
@@ -87,6 +89,11 @@ class App {
             // Alignment controls
             alignEnergyBtn: document.getElementById('align-energy-btn'),
             alignThetaBtn: document.getElementById('align-theta-btn'),
+
+            // History controls
+            historyUndoBtn: document.getElementById('history-undo-btn'),
+            historyList: document.getElementById('history-list'),
+            historyEmptyState: document.getElementById('history-empty-state'),
 
             // hv Mapping controls
             hvMappingToggleHeader: document.getElementById('hv-mapping-toggle-header'),
@@ -702,15 +709,18 @@ class App {
 
                 const data = await res.json();
 
-                // Update file path and load
-                this.selectedFilePath = data.filename;
-                await this.loadSelectedFile();
-
-                // Set relevant UI state
-                this.ui.xAxisType.value = 'k';
-                if (this.ui.dataInfo) {
-                    this.ui.dataInfo.textContent += " (Converted to k-space)";
-                }
+                await this.applyProcessedResult({
+                    filename: data.filename,
+                    operation: "Convert to k",
+                    details: `hv=${hv.toFixed(2)} eV`,
+                    keepSettings: false,
+                    afterLoad: () => {
+                        this.ui.xAxisType.value = 'k';
+                        if (this.ui.dataInfo) {
+                            this.ui.dataInfo.textContent += " (Converted to k-space)";
+                        }
+                    }
+                });
 
             } catch (e) {
                 console.error("Conversion Error:", e);
@@ -758,15 +768,18 @@ class App {
 
                     const data = await res.json();
 
-                    // Update file path and load
-                    this.selectedFilePath = data.filename;
-                    await this.loadSelectedFile();
-
-                    // Set relevant UI state
-                    this.ui.xAxisType.value = 'k'; // or kx
-                    if (this.ui.dataInfo) {
-                        this.ui.dataInfo.textContent += " (Converted to kx-hv)";
-                    }
+                    await this.applyProcessedResult({
+                        filename: data.filename,
+                        operation: "Convert to kx-hv",
+                        details: "HV scan",
+                        keepSettings: false,
+                        afterLoad: () => {
+                            this.ui.xAxisType.value = 'k'; // or kx
+                            if (this.ui.dataInfo) {
+                                this.ui.dataInfo.textContent += " (Converted to kx-hv)";
+                            }
+                        }
+                    });
 
                 } catch (e) {
                     console.error("Conversion Error:", e);
@@ -815,17 +828,22 @@ class App {
 
                     const data = await res.json();
 
-                    this.selectedFilePath = data.filename;
-                    await this.loadSelectedFile();
+                    await this.applyProcessedResult({
+                        filename: data.filename,
+                        operation: "Convert to kx-kz",
+                        details: "HV scan to kz",
+                        keepSettings: false,
+                        afterLoad: () => {
+                            this.ui.xAxisType.value = 'k';
+                            if (this.ui.zAxisType) this.ui.zAxisType.value = 'k'; // kz usually maps to 'scan' dim, but we might want to call it k?
+                            // Actually, convert_angle_to_k for kz usually names the axis 'kz'.
+                            // The loader maps 'kz' to 'ky' in normalized axes if 'ky' is present? No, let's check loader.
 
-                    this.ui.xAxisType.value = 'k';
-                    if (this.ui.zAxisType) this.ui.zAxisType.value = 'k'; // kz usually maps to 'scan' dim, but we might want to call it k?
-                    // Actually, convert_angle_to_k for kz usually names the axis 'kz'.
-                    // The loader maps 'kz' to 'ky' in normalized axes if 'ky' is present? No, let's check loader.
-
-                    if (this.ui.dataInfo) {
-                        this.ui.dataInfo.textContent += " (Converted to kx-kz)";
-                    }
+                            if (this.ui.dataInfo) {
+                                this.ui.dataInfo.textContent += " (Converted to kx-kz)";
+                            }
+                        }
+                    });
 
                 } catch (e) {
                     console.error("Conversion Error:", e);
@@ -881,6 +899,10 @@ class App {
         document.getElementById('reset-data-btn').addEventListener('click', () => {
             this.resetData();
         });
+
+        if (this.ui.historyUndoBtn) {
+            this.ui.historyUndoBtn.addEventListener('click', () => this.undoHistory());
+        }
 
         document.getElementById('reset-calibration-btn').addEventListener('click', () => {
             this.resetData();
@@ -1234,18 +1256,22 @@ class App {
                     }).then(r => r.json());
 
                     if (alignRes.filename) {
-                        // Reload with new file
-                        this.selectedFilePath = alignRes.filename;
-                        await this.loadSelectedFile({ keepSettings: true });
+                        await this.applyProcessedResult({
+                            filename: alignRes.filename,
+                            operation: "Align Energy",
+                            details: hvMappingEnabled ? `3D fit range=${fitRange}` : `EF=${ef.toFixed(4)}`,
+                            keepSettings: true,
+                            afterLoad: () => {
+                                // Reset EF input to 0 since we act as if it is now aligned
+                                this.ui.efInput.value = "0.0000";
+                                // Reset visual calibration offsets since data is now shifted
+                                this.calibration.fermiOffset = 0;
+                                this.recalculateData();
 
-                        // Reset EF input to 0 since we act as if it is now aligned
-                        this.ui.efInput.value = "0.0000";
-                        // Reset visual calibration offsets since data is now shifted
-                        this.calibration.fermiOffset = 0;
-                        this.recalculateData();
-
-                        if (this.ui.dataInfo) this.ui.dataInfo.textContent = hvMappingEnabled ?
-                            "Energy Aligned (3D Fit & Resample)" : "Energy Aligned (Constant Shift)";
+                                if (this.ui.dataInfo) this.ui.dataInfo.textContent = hvMappingEnabled ?
+                                    "Energy Aligned (3D Fit & Resample)" : "Energy Aligned (Constant Shift)";
+                            }
+                        });
                     } else {
                         throw new Error(alignRes.detail || "Alignment API returned no filename");
                     }
@@ -1305,18 +1331,22 @@ class App {
                     const data = await res.json();
                     currentPath = data.filename;
 
-                    // Reload
-                    this.selectedFilePath = currentPath;
-                    await this.loadSelectedFile({ keepSettings: true });
+                    await this.applyProcessedResult({
+                        filename: currentPath,
+                        operation: "Align Theta",
+                        details: `theta=${theta.toFixed(2)}, scan=${scan.toFixed(2)}`,
+                        keepSettings: true,
+                        afterLoad: () => {
+                            // Reset inputs
+                            this.ui.thetaInput.value = "0.00";
+                            if (this.ui.scanInput) this.ui.scanInput.value = "0.00";
 
-                    // Reset inputs
-                    this.ui.thetaInput.value = "0.00";
-                    if (this.ui.scanInput) this.ui.scanInput.value = "0.00";
-
-                    // Reset visual offsets
-                    this.calibration.angleOffsetKx = 0;
-                    this.calibration.angleOffsetKy = 0;
-                    this.recalculateData();
+                            // Reset visual offsets
+                            this.calibration.angleOffsetKx = 0;
+                            this.calibration.angleOffsetKy = 0;
+                            this.recalculateData();
+                        }
+                    });
 
                 } catch (e) {
                     console.error("Align Error:", e);
@@ -1336,11 +1366,154 @@ class App {
         this.ui.cmaxVal.textContent = max;
     }
 
+    cloneCalibration(calibration = this.calibration) {
+        return {
+            angleOffsetKx: calibration.angleOffsetKx || 0,
+            angleOffsetKy: calibration.angleOffsetKy || 0,
+            fermiOffset: calibration.fermiOffset || 0
+        };
+    }
+
+    createHistoryEntry({ path, operation, details }) {
+        return {
+            path,
+            operation,
+            details: details || "",
+            timestamp: Date.now(),
+            calibration: this.cloneCalibration()
+        };
+    }
+
+    initializeHistory(path) {
+        if (!path) {
+            this.historyEntries = [];
+            this.historyIndex = -1;
+            this.renderHistory();
+            return;
+        }
+
+        const basename = path.split(/[/\\]/).pop();
+        this.historyEntries = [
+            this.createHistoryEntry({
+                path,
+                operation: "Loaded",
+                details: basename
+            })
+        ];
+        this.historyIndex = 0;
+        this.renderHistory();
+    }
+
+    recordHistory(operation, details, path = this.selectedFilePath) {
+        if (!path) return;
+
+        if (this.historyIndex < this.historyEntries.length - 1) {
+            this.historyEntries = this.historyEntries.slice(0, this.historyIndex + 1);
+        }
+
+        this.historyEntries.push(this.createHistoryEntry({ path, operation, details }));
+        this.historyIndex = this.historyEntries.length - 1;
+        this.renderHistory();
+    }
+
+    renderHistory() {
+        if (this.ui.historyUndoBtn) {
+            this.ui.historyUndoBtn.disabled = this.historyIndex <= 0;
+        }
+
+        if (!this.ui.historyList) return;
+
+        this.ui.historyList.innerHTML = "";
+
+        if (this.historyEntries.length === 0) {
+            if (this.ui.historyEmptyState) this.ui.historyEmptyState.style.display = 'block';
+            return;
+        }
+
+        if (this.ui.historyEmptyState) this.ui.historyEmptyState.style.display = 'none';
+
+        this.historyEntries.forEach((entry, index) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'history-item';
+            if (index === this.historyIndex) item.classList.add('active');
+            if (index > this.historyIndex) item.classList.add('future');
+
+            const title = document.createElement('span');
+            title.className = 'history-item-title';
+            title.textContent = `${index + 1}. ${entry.operation}`;
+
+            const meta = document.createElement('span');
+            meta.className = 'history-item-meta';
+            const time = new Date(entry.timestamp).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            meta.textContent = entry.details ? `${time} · ${entry.details}` : time;
+
+            item.appendChild(title);
+            item.appendChild(meta);
+            item.disabled = index === this.historyIndex;
+            item.addEventListener('click', () => this.restoreHistoryState(index));
+
+            this.ui.historyList.appendChild(item);
+        });
+    }
+
+    async applyProcessedResult({ filename, operation, details, keepSettings = true, afterLoad }) {
+        if (!filename) {
+            throw new Error(`${operation || "Processing"} returned no filename`);
+        }
+
+        this.selectedFilePath = filename;
+        await this.loadSelectedFile({ keepSettings, preserveHistory: true });
+
+        if (afterLoad) {
+            afterLoad();
+        }
+
+        this.recordHistory(operation || "Processed", details, filename);
+    }
+
+    async undoHistory() {
+        if (this.historyIndex <= 0) return;
+        await this.restoreHistoryState(this.historyIndex - 1);
+    }
+
+    async restoreHistoryState(index) {
+        if (index < 0 || index >= this.historyEntries.length || index === this.historyIndex) return;
+
+        const previousIndex = this.historyIndex;
+        const previousPath = this.selectedFilePath;
+        const previousCalibration = this.cloneCalibration();
+        const entry = this.historyEntries[index];
+        this.historyIndex = index;
+        this.calibration = this.cloneCalibration(entry.calibration);
+        this.selectedFilePath = entry.path;
+        this.renderHistory();
+
+        try {
+            await this.loadSelectedFile({ keepSettings: true, fromHistory: true, preserveHistory: true });
+            if (this.ui.dataInfo) {
+                this.ui.dataInfo.textContent += ` (Restored: ${entry.operation})`;
+            }
+        } catch (error) {
+            console.error("History restore error:", error);
+            alert(`Failed to restore history entry: ${error.message}`);
+            this.historyIndex = previousIndex;
+            this.selectedFilePath = previousPath;
+            this.calibration = previousCalibration;
+            this.renderHistory();
+        }
+    }
+
     async loadSelectedFile(options = {}) {
         let filename = this.selectedFilePath;
         if (!filename && !this.selectedFileObj) return;
 
         const keepSettings = options.keepSettings || false;
+        const preserveHistory = options.preserveHistory || options.fromHistory || false;
 
         this.ui.loadBtn.disabled = true;
         this.ui.loadBtn.textContent = "Loading...";
@@ -1474,6 +1647,12 @@ class App {
 
             // Recalculate
             this.recalculateData();
+
+            if (!preserveHistory) {
+                this.initializeHistory(filename);
+            } else {
+                this.renderHistory();
+            }
 
         } catch (error) {
             console.error("Error loading file:", error);
@@ -1804,20 +1983,19 @@ class App {
             // Exit local crop mode UI
             this.visualizer.exitCropMode();
 
-            // Update file path and reload
-            this.selectedFilePath = data.filename;
-
-            // Reload with keepSettings=true to preserve viewer settings (colormap etc)
-            // But NOT calibration if the axes have changed? 
-            // Actually, keepSettings=true preserves calibration offsets.
-            // Since the new file will have the same PHYSICAL values (just fewer of them),
-            // and calibration offsets are physical shifts, they should remain valid.
-            // E.g. Fermi is still at -0.5eV if we didn't crop it out.
-            await this.loadSelectedFile({ keepSettings: true });
-
-            if (this.ui.dataInfo) {
-                this.ui.dataInfo.textContent += " (Cropped)";
-            }
+            await this.applyProcessedResult({
+                filename: data.filename,
+                operation: "Crop",
+                details: Object.entries(ranges)
+                    .map(([axis, range]) => `${axis}:${range[0]}-${range[1]}`)
+                    .join(", "),
+                keepSettings: true,
+                afterLoad: () => {
+                    if (this.ui.dataInfo) {
+                        this.ui.dataInfo.textContent += " (Cropped)";
+                    }
+                }
+            });
 
         } catch (e) {
             console.error("Crop Error:", e);
@@ -1879,6 +2057,7 @@ class App {
             this.ui.setFermiBtn,
             document.getElementById('angle-to-k-btn'),
             document.getElementById('reset-data-btn'),
+            this.ui.historyUndoBtn,
             document.getElementById('export-png-btn'),
             document.getElementById('export-svg-btn'),
             document.getElementById('invert-colormap-check'),
@@ -1929,8 +2108,8 @@ class App {
         if (kzSelect) kzSelect.value = 'convert';
         if (kzGroup) kzGroup.style.display = 'none';
 
-        // Reload the file
-        this.loadSelectedFile();
+        // Reload the current file without adding or resetting processing history.
+        this.loadSelectedFile({ preserveHistory: true });
     }
 
     normalize3DScans() {

@@ -13,6 +13,7 @@ from typing import Sequence
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 DEFAULT_MP_API_KEY = "sMqgB9CvxOwdio2tBv3XYZm3uDCYaH5c"
+LEGACY_COMMANDS = {"both", "browser", "edit"}
 
 
 def _set_default_environment(host: str | None = None, port: int | None = None) -> dict[str, str]:
@@ -37,15 +38,6 @@ def run_browser(initial_folder: str | None = None) -> int:
     from ADAPT_browser.app import main as browser_main
 
     return browser_main(initial_folder=initial_folder)
-
-
-def run_edit(host: str, port: int, reload: bool = False) -> int:
-    _set_default_environment(host, port)
-    import uvicorn
-
-    print(f"Starting ADAPT Edit on http://{host}:{port}")
-    uvicorn.run("ADAPT_edit.server:app", host=host, port=port, reload=reload)
-    return 0
 
 
 def run_both(initial_folder: str | None, host: str, port: int) -> int:
@@ -86,59 +78,28 @@ def build_parser() -> argparse.ArgumentParser:
         prog="adapt",
         description="Launch ADAPT Browser and ADAPT Edit.",
     )
-    subparsers = parser.add_subparsers(dest="command")
-
-    both = subparsers.add_parser("both", help="Start ADAPT Edit and ADAPT Browser.")
-    both.add_argument("initial_folder", nargs="?", help="Initial folder to open in the browser.")
-    both.add_argument("--host", help=f"ADAPT Edit host. Defaults to ADAPT_HOST or {DEFAULT_HOST}.")
-    both.add_argument("--port", type=int, help=f"ADAPT Edit port. Defaults to ADAPT_PORT or {DEFAULT_PORT}.")
-    both.set_defaults(func=_run_both_command)
-
-    browser = subparsers.add_parser("browser", help="Start ADAPT Browser.")
-    browser.add_argument("initial_folder", nargs="?", help="Initial folder to open.")
-    browser.set_defaults(func=_run_browser_command)
-
-    edit = subparsers.add_parser("edit", help="Start ADAPT Edit.")
-    edit.add_argument("--host", help=f"Host to bind. Defaults to ADAPT_HOST or {DEFAULT_HOST}.")
-    edit.add_argument("--port", type=int, help=f"Port to bind. Defaults to ADAPT_PORT or {DEFAULT_PORT}.")
-    edit.add_argument("--reload", action="store_true", help="Enable uvicorn auto-reload.")
-    edit.set_defaults(func=_run_edit_command)
-
+    parser.add_argument("initial_folder", nargs="?", help="Initial folder to open in the browser.")
+    parser.add_argument("--host", help=f"ADAPT Edit host. Defaults to ADAPT_HOST or {DEFAULT_HOST}.")
+    parser.add_argument("--port", type=int, help=f"ADAPT Edit port. Defaults to ADAPT_PORT or {DEFAULT_PORT}.")
     return parser
 
 
-def _normalize_argv(argv: Sequence[str] | None) -> list[str]:
-    args = list(sys.argv[1:] if argv is None else argv)
-    commands = {"both", "browser", "edit"}
-    help_flags = {"-h", "--help"}
-    if not args:
-        return ["both"]
-    if args[0] in commands or args[0] in help_flags:
-        return args
-    return ["both", *args]
-
-
-def _run_browser_command(args: argparse.Namespace) -> int:
-    return run_browser(args.initial_folder)
-
-
-def _run_edit_command(args: argparse.Namespace) -> int:
-    host, port = _host_port(args)
-    return run_edit(host, port, reload=args.reload)
-
-
-def _run_both_command(args: argparse.Namespace) -> int:
-    host, port = _host_port(args)
-    return run_both(args.initial_folder, host, port)
+def _reject_legacy_command(parser: argparse.ArgumentParser, args: Sequence[str]) -> None:
+    if args and args[0] in LEGACY_COMMANDS:
+        parser.error(
+            f"`adapt {args[0]}` is no longer supported. "
+            "Use `uv run adapt [initial_folder] [--host HOST] [--port PORT]` "
+            "to start ADAPT Edit and ADAPT Browser together."
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(_normalize_argv(argv))
-    if not hasattr(args, "func"):
-        parser.print_help()
-        return 0
-    return args.func(args)
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    _reject_legacy_command(parser, raw_args)
+    args = parser.parse_args(raw_args)
+    host, port = _host_port(args)
+    return run_both(args.initial_folder, host, port)
 
 
 if __name__ == "__main__":
