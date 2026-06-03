@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QLabel, QApplication, QSizePolicy,
     QProgressBar, QCheckBox, QMessageBox
 )
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer, QFileSystemWatcher
 from PySide6.QtGui import QAction, QIcon, QPalette, QColor
 
 from .directory_panel import DirectoryPanel
@@ -39,6 +39,16 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ADAPT - Data Browser")
         self.setMinimumSize(1200, 700)
         self.resize(1400, 800)
+
+        # Watch the active folder so newly acquired files appear automatically.
+        self._watch_folder_enabled = True
+        self._watched_folder = ""
+        self._folder_watcher = QFileSystemWatcher(self)
+        self._folder_watcher.directoryChanged.connect(self._on_watched_folder_changed)
+        self._watch_refresh_timer = QTimer(self)
+        self._watch_refresh_timer.setSingleShot(True)
+        self._watch_refresh_timer.setInterval(600)
+        self._watch_refresh_timer.timeout.connect(self._refresh_watched_folder)
         
         # Data manager
         self.data_manager = DataManager(self)
@@ -312,6 +322,14 @@ class MainWindow(QMainWindow):
         self.open_action.setShortcut("Ctrl+O")
         self.open_action.triggered.connect(self._on_open_folder)
         toolbar.addAction(self.open_action)
+
+        # Watch Folder toggle
+        self.watch_folder_action = QAction("👁 Watch Folder", self)
+        self.watch_folder_action.setCheckable(True)
+        self.watch_folder_action.setChecked(self._watch_folder_enabled)
+        self.watch_folder_action.setToolTip("Automatically refresh the file list when the selected folder changes")
+        self.watch_folder_action.toggled.connect(self._on_watch_folder_toggled)
+        toolbar.addAction(self.watch_folder_action)
         
         toolbar.addSeparator()
         
@@ -472,6 +490,7 @@ class MainWindow(QMainWindow):
         """Handle folder selection in directory tree."""
         logger.debug(f"Folder selected: {folder_path}")
         self.file_panel.set_folder(folder_path)
+        self._set_watched_folder(folder_path)
     
     def _on_filter_changed(self, filter_type: str):
         """Handle file filter change."""
@@ -549,6 +568,69 @@ class MainWindow(QMainWindow):
     def _on_theme_changed(self, theme_name: str):
         """Handle theme change."""
         self._apply_theme(theme_name)
+
+    def _on_watch_folder_toggled(self, checked: bool):
+        """Enable or disable automatic refresh for the selected folder."""
+        self._watch_folder_enabled = checked
+        if checked:
+            folder = self.file_panel.get_current_folder()
+            self._set_watched_folder(folder)
+            if folder:
+                self.status_bar.showMessage(f"Watching folder: {folder}")
+        else:
+            self._clear_watched_folders()
+            self.status_bar.showMessage("Folder watching disabled.")
+
+    def _set_watched_folder(self, folder_path: str):
+        """Watch one folder at a time: the folder currently shown in the file panel."""
+        self._clear_watched_folders()
+        self._watched_folder = ""
+
+        if not self._watch_folder_enabled:
+            return
+        if not folder_path or not os.path.isdir(folder_path):
+            return
+
+        if self._folder_watcher.addPath(folder_path):
+            self._watched_folder = folder_path
+            logger.debug(f"Watching folder: {folder_path}")
+        else:
+            logger.warning(f"Failed to watch folder: {folder_path}")
+
+    def _clear_watched_folders(self):
+        """Remove all directories from the folder watcher."""
+        watched = self._folder_watcher.directories()
+        if watched:
+            self._folder_watcher.removePaths(watched)
+
+    def _on_watched_folder_changed(self, folder_path: str):
+        """Debounce directory notifications before refreshing the file list."""
+        if not self._watch_folder_enabled:
+            return
+        if folder_path != self._watched_folder:
+            return
+
+        logger.debug(f"Watched folder changed: {folder_path}")
+        self._watch_refresh_timer.start()
+
+    def _refresh_watched_folder(self):
+        """Refresh the file list after the watched folder changes."""
+        folder = self._watched_folder
+        if not self._watch_folder_enabled or not folder:
+            return
+        if not os.path.isdir(folder):
+            self._set_watched_folder("")
+            self.status_bar.showMessage("Watched folder is no longer available.")
+            return
+
+        count = self.file_panel.refresh_current_folder()
+
+        # Some platforms drop watches after directory changes; keep the active
+        # folder registered without disturbing the user's current selection.
+        if folder not in self._folder_watcher.directories():
+            self._folder_watcher.addPath(folder)
+
+        self.status_bar.showMessage(f"Folder updated: {count} supported files")
     
     def _start_loading_animation(self):
         """Start the animated progress bar for loading indication."""

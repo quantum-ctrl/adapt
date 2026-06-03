@@ -397,6 +397,22 @@ class FileListPanel(QWidget):
         """Set the folder to display files from."""
         self._current_folder = folder_path
         self._load_files()
+
+    def get_current_folder(self) -> str:
+        """Get the folder currently displayed in the file list."""
+        return self._current_folder
+
+    def refresh_current_folder(self) -> int:
+        """
+        Reload files from the current folder.
+
+        Returns:
+            Number of supported files found after refresh.
+        """
+        selected_file = self.get_selected_file()
+        self._load_files()
+        self._restore_selection(selected_file)
+        return len(self._all_files)
     
     def set_filter(self, filter_type: str):
         """Set the file type filter."""
@@ -433,6 +449,35 @@ class FileListPanel(QWidget):
             self._populate_grid(filtered)
         else:
             self._populate_table(filtered)
+
+    def _restore_selection(self, filepath: Optional[str]):
+        """Restore the selected file after a refresh when it is still visible."""
+        if not filepath:
+            return
+
+        if self._is_grid_view:
+            old_block = self.grid_list.blockSignals(True)
+            try:
+                for i in range(self.grid_list.count()):
+                    item = self.grid_list.item(i)
+                    if item and item.data(Qt.UserRole) == filepath:
+                        self.grid_list.setCurrentItem(item)
+                        item.setSelected(True)
+                        break
+            finally:
+                self.grid_list.blockSignals(old_block)
+            return
+
+        old_block = self.table.blockSignals(True)
+        try:
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)
+                if item and item.data(Qt.UserRole) == filepath:
+                    self.table.selectRow(row)
+                    self.table.setCurrentCell(row, 0)
+                    break
+        finally:
+            self.table.blockSignals(old_block)
     
     def _populate_table(self, files: list):
         """Populate the table view."""
