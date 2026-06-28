@@ -146,7 +146,8 @@ def load(path: str) -> xr.DataArray:
             # Flip if Binding
             if is_binding:
                 raw_eb_kinetic = np.flip(raw_eb_kinetic)
-                
+                raw_data = np.flip(raw_data, axis=0)
+
             # Convert to Binding Energy: Eb = Ek - hv + 4.5
             # MATLAB: dataStr.raw_eb = raw_eb-hv+4.5;
             raw_eb = raw_eb_kinetic - hv + 4.5
