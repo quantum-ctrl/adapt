@@ -190,7 +190,7 @@ def get_bz_slice(bz: BrillouinZone,
     try:
         hull = ConvexHull(points)
         return points[hull.vertices]
-    except:
+    except Exception:
         return points
 
 
