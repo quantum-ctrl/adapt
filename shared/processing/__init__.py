@@ -60,7 +60,6 @@ try:
         reduce_to_2d,
         merge_to_3d,
         interpolate_to_common_grid,
-        interpolate_to_common_grid,
         crop,
         normalize_slices
     )
@@ -151,11 +150,6 @@ __all__ = [
     # Visualization
     'plot_2d_data',
     'plot_3d_data',
-    # Interactive visualization
-    'InteractiveCrosshair2D',
-    'InteractiveCrosshair3D',
-    'interactive_plot_2d',
-    'interactive_plot_3d',
     'get_slice',
     # Dimension manipulation
     'reduce_to_2d',
