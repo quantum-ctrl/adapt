@@ -712,11 +712,15 @@ async def fit_fermi_edge_endpoint(request: FitFermiRequest):
         # Convert numpy types to native for JSON
         clean_results = {}
         for k, v in results.items():
-            if isinstance(v, (np.float32, np.float64)):
+            if isinstance(v, (np.integer,)):
+                clean_results[k] = int(v)
+            elif isinstance(v, (np.floating,)):
                 clean_results[k] = float(v)
-            elif k in ['success', 'error']:
+            elif isinstance(v, np.ndarray):
+                clean_results[k] = v.tolist()
+            elif isinstance(v, (bool, int, float, str, list, type(None))):
                 clean_results[k] = v
-                
+
         return clean_results
         
     except Exception as e:
