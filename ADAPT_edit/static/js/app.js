@@ -130,7 +130,6 @@ class App {
             bzLatticeParams: document.getElementById('bz-lattice-params'),
             bzLatticeAngles: document.getElementById('bz-lattice-angles'),
             bzCrystalName: document.getElementById('bz-crystal-name'),
-            bzCrystalName: document.getElementById('bz-crystal-name'),
             bzMPId: document.getElementById('bz-mp-id'),
             bzCalculateBtn: document.getElementById('bz-calculate-btn'),
 
@@ -268,7 +267,8 @@ class App {
         } catch (error) {
             console.error("Session load error:", error);
             if (this.ui.dataInfo) {
-                this.ui.dataInfo.innerHTML = `<span style="color: #ff5252;">Session Error: ${error.message}</span>`;
+                this.ui.dataInfo.textContent = `Session Error: ${error.message}`;
+                this.ui.dataInfo.style.color = '#ff5252';
             }
         }
     }
@@ -464,7 +464,6 @@ class App {
 
                     // Sync slider with input value
                     const distanceSlider = document.getElementById('bz-plane-distance-slider');
-                    const distanceInput = document.getElementById('bz-plane-distance');
                     if (distanceSlider && distanceInput) {
                         distanceSlider.value = parseFloat(distanceInput.value) || 0;
                     }
@@ -520,6 +519,7 @@ class App {
                         // Render in bzContainer
                         this.ui.bzContainer.innerHTML = '';
                         const img = document.createElement('img');
+                        img.onload = () => URL.revokeObjectURL(url);
                         img.src = url;
                         img.style.maxWidth = '100%';
                         img.style.maxHeight = '100%';
@@ -1145,9 +1145,6 @@ class App {
                 if (this.ui.curvatureControls) {
                     this.ui.curvatureControls.style.display = e.target.checked ? 'block' : 'none';
                 }
-                if (this.ui.curvatureControls) {
-                    this.ui.curvatureControls.style.display = e.target.checked ? 'block' : 'none';
-                }
                 this.updateEnhancement();
             });
         }
@@ -1548,9 +1545,6 @@ class App {
 
             // Settings regarding HV Mapping, CLAHE, Curvature are now preserved throughout file loads.
 
-
-            this.recalculateData();
-
             // Auto-adjust contrast after loading new data
             try {
                 this.visualizer.autoContrast();
@@ -1656,7 +1650,10 @@ class App {
 
         } catch (error) {
             console.error("Error loading file:", error);
-            if (this.ui.dataInfo) this.ui.dataInfo.innerHTML = `<span style="color: #ff5252;">Error: ${error.message}</span>`;
+            if (this.ui.dataInfo) {
+                this.ui.dataInfo.textContent = `Error: ${error.message}`;
+                this.ui.dataInfo.style.color = '#ff5252';
+            }
             alert(`Failed to load file: ${error.message}`);
         } finally {
             this.ui.loadBtn.disabled = false;
