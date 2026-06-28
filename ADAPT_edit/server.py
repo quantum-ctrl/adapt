@@ -174,6 +174,24 @@ def _path_within_roots(path: str, roots: List[str]) -> bool:
     return False
 
 
+def _resolve_and_validate_path(path: str) -> str:
+    """Resolve a client-provided path and validate it against browse roots and temp files."""
+    if os.path.isabs(path):
+        file_path = path
+    else:
+        file_path = os.path.join(DATA_DIR, path)
+
+    real_path = os.path.realpath(file_path)
+    is_temp = any(os.path.realpath(t) == real_path for t in TEMP_FILES)
+    if not is_temp and not _path_within_roots(file_path, BROWSE_ROOTS):
+        raise HTTPException(status_code=403, detail="Access denied: path outside allowed roots")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return file_path
+
+
 def _load_data_file(file_path: str):
     """
     Load a data file using the appropriate loader based on file extension.
@@ -308,15 +326,8 @@ async def browse_files(path: str = Query(None, description="Absolute path to bro
 @app.get("/api/load")
 async def load_metadata(path: str = Query(..., description="Path to the file")):
     """Load file metadata and axis info."""
-    # Check if path is absolute (e.g. temp file) or relative
-    if os.path.isabs(path):
-        file_path = path
-    else:
-        file_path = os.path.join(DATA_DIR, path)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-    
+    file_path = _resolve_and_validate_path(path)
+
     try:
         # Load data using the centralized loader
         result = _load_data_file(file_path)
@@ -468,15 +479,8 @@ async def load_metadata(path: str = Query(..., description="Path to the file")):
 @app.get("/api/data")
 async def get_data(path: str = Query(..., description="Path to the file")):
     """Get the raw data array as a binary stream."""
-    # Check if path is absolute (e.g. temp file) or relative
-    if os.path.isabs(path):
-        file_path = path
-    else:
-        file_path = os.path.join(DATA_DIR, path)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-    
+    file_path = _resolve_and_validate_path(path)
+
     try:
         # Load data using the centralized loader
         result = _load_data_file(file_path)
@@ -563,12 +567,7 @@ class CropRequest(BaseModel):
 @app.post("/api/process/align")
 async def align_data(request: AlignRequest):
     """Align data along an axis and return path to new file."""
-    file_path = request.path
-    if not os.path.isabs(file_path):
-        file_path = os.path.join(DATA_DIR, file_path)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+    file_path = _resolve_and_validate_path(request.path)
         
     try:
         # Load data using centralized loader
@@ -684,9 +683,7 @@ async def align_data(request: AlignRequest):
 @app.post("/api/process/fit_fermi_edge")
 async def fit_fermi_edge_endpoint(request: FitFermiRequest):
     """Fit Fermi edge and return parameters."""
-    file_path = request.path
-    if not os.path.isabs(file_path):
-        file_path = os.path.join(DATA_DIR, file_path)
+    file_path = _resolve_and_validate_path(request.path)
         
     try:
         # Load data using centralized loader
@@ -728,12 +725,7 @@ async def fit_fermi_edge_endpoint(request: FitFermiRequest):
 @app.post("/api/process/convert_k")
 async def convert_k(request: ConvertKRequest):
     """Convert data to k-space."""
-    file_path = request.path
-    if not os.path.isabs(file_path):
-        file_path = os.path.join(DATA_DIR, file_path)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+    file_path = _resolve_and_validate_path(request.path)
 
     try:
         # Load data using centralized loader
@@ -1044,12 +1036,7 @@ async def update_intersection_plane(request: UpdatePlaneRequest):
 @app.post("/api/process/crop")
 async def crop_endpoint(request: CropRequest):
     """Crop data and return path to new file."""
-    file_path = request.path
-    if not os.path.isabs(file_path):
-        file_path = os.path.join(DATA_DIR, file_path)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+    file_path = _resolve_and_validate_path(request.path)
 
     try:
         # Load data using centralized loader
