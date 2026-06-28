@@ -2126,6 +2126,7 @@ class App {
         // d1: Angle (cols)
         // d2: Scan (slices)
 
+        this.originalData = this.originalData.slice();
         const data = this.originalData;
         const totalIntensities = new Float64Array(d2); // Use Float64 for accumulation precision
 
