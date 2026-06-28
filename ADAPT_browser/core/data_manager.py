@@ -85,6 +85,7 @@ class DataManager(QObject):
         self._worker = None
         self._thread = None
         self._current_data: Optional[DataResult] = None
+        self._load_cancelled = False
     
     @property
     def current_data(self) -> Optional[DataResult]:
@@ -158,7 +159,8 @@ class DataManager(QObject):
         """
         # Cancel any existing load
         self.cancel_loading()
-        
+        self._load_cancelled = False
+
         self.loading_started.emit(filepath)
         
         # Create worker and thread
@@ -181,6 +183,8 @@ class DataManager(QObject):
     
     def _on_load_finished(self, result: Optional[DataResult]):
         """Handle load completion."""
+        if self._load_cancelled:
+            return
         self._current_data = result
         self.loading_finished.emit(result)
     
@@ -197,6 +201,7 @@ class DataManager(QObject):
         """Cancel any ongoing loading operation safely."""
         if self._thread is None:
             return
+        self._load_cancelled = True
         
         if self._thread.isRunning():
             # Disconnect signals first to prevent callbacks during cleanup
