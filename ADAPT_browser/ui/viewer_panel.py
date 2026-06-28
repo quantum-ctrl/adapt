@@ -493,9 +493,9 @@ class ViewerPanel(QWidget):
             y_coords = self._data.coords.get(y_dim)
             
             if x_coords is not None and y_coords is not None and len(x_coords) > 1 and len(y_coords) > 1:
-                # Find nearest indices
-                x_idx = np.searchsorted(x_coords, real_x)
-                y_idx = np.searchsorted(y_coords, real_y)
+                # Find nearest indices (handle both ascending and descending axes)
+                x_idx = np.searchsorted(x_coords, real_x, sorter=np.argsort(x_coords))
+                y_idx = np.searchsorted(y_coords, real_y, sorter=np.argsort(y_coords))
                 
                 # Clamp to valid range
                 x_idx = max(0, min(x_idx, len(x_coords) - 1))
