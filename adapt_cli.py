@@ -12,18 +12,16 @@ from typing import Sequence
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
-DEFAULT_MP_API_KEY = "sMqgB9CvxOwdio2tBv3XYZm3uDCYaH5c"
 LEGACY_COMMANDS = {"both", "browser", "edit"}
 
 
 def _set_default_environment(host: str | None = None, port: int | None = None) -> dict[str, str]:
     env = os.environ.copy()
-    env.setdefault("MP_API_KEY", DEFAULT_MP_API_KEY)
     if host is not None:
         env["ADAPT_HOST"] = host
     if port is not None:
         env["ADAPT_PORT"] = str(port)
-    os.environ.update({key: value for key, value in env.items() if key in {"MP_API_KEY", "ADAPT_HOST", "ADAPT_PORT"}})
+    os.environ.update({key: value for key, value in env.items() if key in {"ADAPT_HOST", "ADAPT_PORT"}})
     return env
 
 
