@@ -301,7 +301,14 @@ def convert_3d_kxky_to_k(data, hv, phi=DEFAULT_WORK_FUNCTION, angle_dims=('angle
         kx_at_e = kx_values[:, i_e]
         ky_at_e = ky_values[:, i_e]
         slice_data = data_values[:, :, i_e]
-        
+
+        # RegularGridInterpolator requires strictly increasing coordinates
+        kx_order = np.argsort(kx_at_e)
+        ky_order = np.argsort(ky_at_e)
+        kx_at_e = kx_at_e[kx_order]
+        ky_at_e = ky_at_e[ky_order]
+        slice_data = slice_data[np.ix_(kx_order, ky_order)]
+
         # Create interpolator for this energy slice
         interp = RegularGridInterpolator(
             (kx_at_e, ky_at_e), slice_data,
