@@ -1357,13 +1357,13 @@ export class Visualizer {
         } else if (e.type === 'mousemove') {
             if (this.isDraggingCalibration) {
                 if (this.calibrationDragAxis === 'x') {
-                    let t = (x - margin.left) / plotWidth;
+                    let t = (x - MARGIN.left) / plotWidth;
                     t = Math.max(0, Math.min(1, t));
                     const newVal = xMin + t * (xMax - xMin);
                     // Set calibration for the specific axis being dragged
                     setCalForAxis(this.calibrationDragAxisArr, newVal);
                 } else if (this.calibrationDragAxis === 'y') {
-                    let t = (rect.height - margin.bottom - y) / plotHeight;
+                    let t = (rect.height - MARGIN.bottom - y) / plotHeight;
                     t = Math.max(0, Math.min(1, t));
                     const newVal = yMin + t * (yMax - yMin);
                     setCalForAxis(this.calibrationDragAxisArr, newVal);
