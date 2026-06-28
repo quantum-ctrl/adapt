@@ -256,10 +256,11 @@ def _snip_1d(spectrum: NDArray, iterations: int, decreasing: bool) -> NDArray:
         window_sizes = [1] * iterations
     
     for p in window_sizes:
-        # For each point, take minimum of current value and average of neighbors
-        for i in range(p, n - p):
-            neighbor_avg = 0.5 * (working[i - p] + working[i + p])
-            working[i] = min(working[i], neighbor_avg)
+        prev = working.copy()
+        working[p:n - p] = np.minimum(
+            prev[p:n - p],
+            0.5 * (prev[:n - 2 * p] + prev[2 * p:])
+        )
     
     # Inverse LLS transform
     background = _inverse_lls_transform(working)
