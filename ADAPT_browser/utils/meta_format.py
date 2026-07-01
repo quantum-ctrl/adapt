@@ -84,6 +84,43 @@ def format_metadata(meta: Dict[str, Any], indent: int = 0) -> str:
     return "\n".join(lines)
 
 
+def _scalar(value: Any):
+    """Reduce an array/list metadata value to a single representative scalar."""
+    if isinstance(value, (np.ndarray, list, tuple)):
+        arr = np.asarray(value)
+        if arr.size == 0:
+            return None
+        value = arr.flat[0]
+    if isinstance(value, float) and np.isnan(value):
+        return None
+    return value
+
+
+def summarize_for_listing(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pull out the handful of fields shown as file-list columns (Type, hv, Temp).
+
+    Checks top-level keys first, then falls back to the nested 'meta' dict
+    that some loaders (e.g. ADRESS) use for secondary fields. Missing fields
+    are returned as None rather than raising, since Temp/Pol/Epass are
+    loader-specific.
+    """
+    nested = meta.get('meta') if isinstance(meta.get('meta'), dict) else {}
+
+    def lookup(key: str):
+        if key in meta:
+            return _scalar(meta[key])
+        if key in nested:
+            return _scalar(nested[key])
+        return None
+
+    return {
+        'Type': lookup('Type'),
+        'hv': lookup('hv'),
+        'Temp': lookup('Temp'),
+    }
+
+
 def format_shape_dtype(data: np.ndarray) -> str:
     """
     Format shape and dtype information.

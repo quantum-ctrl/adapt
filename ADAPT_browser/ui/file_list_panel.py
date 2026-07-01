@@ -5,18 +5,42 @@ Supports both list view and grid view modes with data thumbnail previews.
 
 import os
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import numpy as np
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QLabel, QAbstractItemView, QStackedWidget,
-    QListWidget, QListWidgetItem, QPushButton, QFrame, QSlider
+    QListWidget, QListWidgetItem, QPushButton, QFrame, QSlider, QComboBox, QMenu,
+    QInputDialog, QMessageBox, QCheckBox
 )
 from PySide6.QtCore import Signal, Qt, QSize, QObject, QRunnable, QThreadPool
 from PySide6.QtGui import QIcon, QFont, QImage, QPixmap, QPainter, QColor
 
 from ADAPT_browser.core.data_manager import DataManager, filter_files_by_type
+from ADAPT_browser.core.metadata_cache import MetadataIndexWorker
+from ADAPT_browser.core import ratings
+from ADAPT_browser.ui.compare_panel import MAX_COMPARE_SLOTS
+
+try:
+    from shared.session import (
+        get_collections,
+        create_collection,
+        add_file_to_collection,
+        remove_file_from_collection,
+    )
+except ImportError:
+    def get_collections():
+        return {}
+
+    def create_collection(name):
+        return False
+
+    def add_file_to_collection(name, filepath):
+        return False
+
+    def remove_file_from_collection(name, filepath):
+        return False
 
 
 # File type icons/emojis (fallback when no thumbnail available)
@@ -198,6 +222,23 @@ class ThumbnailWorker(QRunnable):
         return pixmap
 
 
+class NumericTableWidgetItem(QTableWidgetItem):
+    """Table item that sorts by a numeric value, with missing values sorting last."""
+
+    def __init__(self, display_text: str, sort_value: Optional[float]):
+        super().__init__(display_text)
+        self._sort_value = sort_value
+
+    def __lt__(self, other):
+        if isinstance(other, NumericTableWidgetItem):
+            if self._sort_value is None:
+                return False
+            if other._sort_value is None:
+                return True
+            return self._sort_value < other._sort_value
+        return super().__lt__(other)
+
+
 class FileListPanel(QWidget):
     """
     Panel showing files in the selected folder.
@@ -207,11 +248,20 @@ class FileListPanel(QWidget):
     
     # Emitted when a file is selected
     file_selected = Signal(str)  # file path
-    
+
+    # Emitted when the set of files pinned for compare mode changes
+    compare_pins_changed = Signal(list)  # list of file paths
+
+    # Emitted when a collection is created/deleted from within this panel
+    collections_changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_folder = ""
+        self._virtual_mode = False
+        self._virtual_label = ""
         self._current_filter = "All"
+        self._scan_type_filter = "All"
         self._all_files = []
         self._is_grid_view = False
         self._thumbnail_size = DEFAULT_THUMBNAIL_SIZE
@@ -219,6 +269,12 @@ class FileListPanel(QWidget):
         self._invert = True
         self._thumbnail_cache: Dict[str, tuple] = {}  # filepath -> (max_pixmap, cmap, invert)
         self._pending_thumbnails: set = set()
+        self._metadata_cache: Dict[str, dict] = {}  # filepath -> {Type, hv, Temp}, in-memory only
+        self._pending_metadata: set = set()
+        self._compare_pins: List[str] = []
+        self._ratings_cache: Dict[str, dict] = {}  # filepath -> {"rating": int, "rejected": bool}
+        self._loaded_rating_folders: set = set()
+        self._hide_rejected = False
         self._thread_pool = QThreadPool.globalInstance()
         self._thread_pool.setMaxThreadCount(2)  # Limit concurrent loads
         self._last_emitted_file: Optional[str] = None  # Deduplication tracking
@@ -243,7 +299,21 @@ class FileListPanel(QWidget):
         header_layout.addWidget(self.header)
         
         header_layout.addStretch()
-        
+
+        # Scan type filter (based on loaded metadata, independent of the
+        # extension filter in the toolbar)
+        self.scan_type_combo = QComboBox()
+        self.scan_type_combo.addItems(["All", "Eb(k)", "Eb(kx,ky)", "Eb(kx,kz)", "Eb(k,i)"])
+        self.scan_type_combo.setToolTip("Filter by scan type (from file metadata)")
+        self.scan_type_combo.currentTextChanged.connect(self._on_scan_type_filter_changed)
+        header_layout.addWidget(self.scan_type_combo)
+
+        # Hide rejected files (rating/reject flag, right-click a file to set)
+        self.hide_rejected_checkbox = QCheckBox("Hide Rejected")
+        self.hide_rejected_checkbox.setToolTip("Hide files marked as rejected")
+        self.hide_rejected_checkbox.toggled.connect(self._on_hide_rejected_toggled)
+        header_layout.addWidget(self.hide_rejected_checkbox)
+
         # Grid size slider (inline, only visible in grid view)
         self.slider_widget = QWidget()
         slider_layout = QHBoxLayout(self.slider_widget)
@@ -285,27 +355,32 @@ class FileListPanel(QWidget):
         
         # List View (Table)
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Name", "Type", "Modified"])
-        
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(
+            ["Name", "Format", "Scan Type", "hv", "Temp", "Modified", "Rating"]
+        )
+        self.table.setSortingEnabled(True)
+
         # Configure table
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        
+
         # Column sizing
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        for col in range(1, 7):
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         
         # Connect table signals
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.cellDoubleClicked.connect(self._on_cell_clicked)
         self.table.currentCellChanged.connect(self._on_table_selection_changed)
-        
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_table_context_menu)
+
         self.view_stack.addWidget(self.table)  # Index 0
         
         # Grid View (List with icon mode)
@@ -322,7 +397,9 @@ class FileListPanel(QWidget):
         self.grid_list.itemClicked.connect(self._on_grid_item_clicked)
         self.grid_list.itemDoubleClicked.connect(self._on_grid_item_clicked)
         self.grid_list.currentItemChanged.connect(self._on_grid_selection_changed)
-        
+        self.grid_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.grid_list.customContextMenuRequested.connect(self._on_grid_context_menu)
+
         self.view_stack.addWidget(self.grid_list)  # Index 1
         
         layout.addWidget(self.view_stack)
@@ -395,11 +472,24 @@ class FileListPanel(QWidget):
     
     def set_folder(self, folder_path: str):
         """Set the folder to display files from."""
+        self._virtual_mode = False
+        self._virtual_label = ""
         self._current_folder = folder_path
         self._load_files()
 
+    def set_file_list(self, paths: list, label: str):
+        """
+        Show an explicit list of files instead of a real folder (used for
+        collections, which can span multiple folders).
+        """
+        self._virtual_mode = True
+        self._virtual_label = label
+        self._current_folder = ""
+        self._all_files = list(paths)
+        self._refresh_display()
+
     def get_current_folder(self) -> str:
-        """Get the folder currently displayed in the file list."""
+        """Get the folder currently displayed in the file list (empty in virtual/collection mode)."""
         return self._current_folder
 
     def refresh_current_folder(self) -> int:
@@ -409,46 +499,99 @@ class FileListPanel(QWidget):
         Returns:
             Number of supported files found after refresh.
         """
+        if self._virtual_mode:
+            return len(self._all_files)
+
         selected_file = self.get_selected_file()
         self._load_files()
         self._restore_selection(selected_file)
         return len(self._all_files)
-    
+
     def set_filter(self, filter_type: str):
         """Set the file type filter."""
         self._current_filter = filter_type
         self._refresh_display()
-    
+
+    def _on_scan_type_filter_changed(self, scan_type: str):
+        """Handle scan-type (metadata) filter change."""
+        self._scan_type_filter = scan_type
+        self._refresh_display()
+
+    def _on_hide_rejected_toggled(self, checked: bool):
+        """Handle the Hide Rejected checkbox."""
+        self._hide_rejected = checked
+        self._refresh_display()
+
     def _load_files(self):
-        """Load files from the current folder."""
+        """Load files from the current folder (stored as absolute paths)."""
         if not self._current_folder or not os.path.isdir(self._current_folder):
             self._all_files = []
             self._refresh_display()
             return
-        
+
         try:
             entries = os.listdir(self._current_folder)
-            self._all_files = [
-                f for f in entries 
+            entries = [
+                f for f in entries
                 if os.path.isfile(os.path.join(self._current_folder, f))
                 and DataManager.is_supported(f)
             ]
-            self._all_files.sort()
+            entries.sort()
+            self._all_files = [os.path.join(self._current_folder, f) for f in entries]
         except OSError:
             self._all_files = []
-        
+
         self._refresh_display()
-    
+
     def _refresh_display(self):
         """Refresh the display with current filter and view mode."""
+        self._ensure_ratings_loaded(self._all_files)
+
         filtered = filter_files_by_type(self._all_files, self._current_filter)
+        filtered = self._apply_scan_type_filter(filtered)
+        filtered = self._apply_reject_filter(filtered)
         count = len(filtered)
-        self.header.setText(f"📄 Files ({count})")
-        
+        label = self._virtual_label if self._virtual_mode else "📄 Files"
+        self.header.setText(f"{label} ({count})")
+
         if self._is_grid_view:
             self._populate_grid(filtered)
         else:
             self._populate_table(filtered)
+
+    def _apply_scan_type_filter(self, filepaths: list) -> list:
+        """
+        Filter by scan-type metadata. Files whose metadata hasn't loaded yet
+        are kept visible until resolved, at which point a non-matching type
+        removes them on the next metadata-driven refresh.
+        """
+        if self._scan_type_filter == "All":
+            return filepaths
+
+        result = []
+        for filepath in filepaths:
+            cached = self._metadata_cache.get(filepath)
+            if cached is None or cached.get('Type') == self._scan_type_filter:
+                result.append(filepath)
+        return result
+
+    def _apply_reject_filter(self, filepaths: list) -> list:
+        """Hide rejected files when the Hide Rejected checkbox is on."""
+        if not self._hide_rejected:
+            return filepaths
+        return [f for f in filepaths if not self._ratings_cache.get(f, {}).get('rejected')]
+
+    def _ensure_ratings_loaded(self, filepaths: list):
+        """Load per-folder rating sidecars for any folders not yet cached."""
+        folders = {os.path.dirname(f) for f in filepaths}
+        folders -= self._loaded_rating_folders
+        for folder in folders:
+            if not folder:
+                continue
+            folder_ratings = ratings.load_folder_ratings(folder)
+            for filename, entry in folder_ratings.items():
+                self._ratings_cache[os.path.join(folder, filename)] = entry
+            self._loaded_rating_folders.add(folder)
 
     def _restore_selection(self, filepath: Optional[str]):
         """Restore the selected file after a refresh when it is still visible."""
@@ -481,21 +624,32 @@ class FileListPanel(QWidget):
     
     def _populate_table(self, files: list):
         """Populate the table view."""
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(files))
-        
-        for row, filename in enumerate(files):
-            filepath = os.path.join(self._current_folder, filename)
-            
-            name_item = QTableWidgetItem(filename)
+
+        for row, filepath in enumerate(files):
+            filename = os.path.basename(filepath)
+            display_name = f"📌 {filename}" if filepath in self._compare_pins else filename
+
+            name_item = QTableWidgetItem(display_name)
             name_item.setData(Qt.UserRole, filepath)
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 0, name_item)
-            
+
             file_type = DataManager.get_file_type(filename) or "?"
             type_item = QTableWidgetItem(file_type)
             type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 1, type_item)
-            
+
+            cached = self._metadata_cache.get(filepath)
+            if cached is not None:
+                self._set_metadata_columns(row, cached)
+            else:
+                self.table.setItem(row, 2, QTableWidgetItem("…"))
+                self.table.setItem(row, 3, NumericTableWidgetItem("…", None))
+                self.table.setItem(row, 4, NumericTableWidgetItem("…", None))
+                self._schedule_metadata_load(filepath)
+
             try:
                 mtime = os.path.getmtime(filepath)
                 time_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
@@ -503,15 +657,51 @@ class FileListPanel(QWidget):
                 time_str = "?"
             time_item = QTableWidgetItem(time_str)
             time_item.setFlags(time_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row, 2, time_item)
+            self.table.setItem(row, 5, time_item)
+
+            entry = self._ratings_cache.get(filepath, {"rating": 0, "rejected": False})
+            rating_text = self._rating_display(filepath)
+            rating_sort = -1 if entry.get('rejected') else entry.get('rating', 0)
+            rating_item = NumericTableWidgetItem(rating_text, rating_sort)
+            rating_item.setFlags(rating_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 6, rating_item)
+
+        self.table.setSortingEnabled(True)
+
+    def _rating_display(self, filepath: str) -> str:
+        """Render a file's rating as star text, or a reject marker."""
+        entry = self._ratings_cache.get(filepath, {"rating": 0, "rejected": False})
+        if entry.get('rejected'):
+            return "🚫 Reject"
+        rating = entry.get('rating', 0)
+        if rating <= 0:
+            return ""
+        return "★" * rating + "☆" * (5 - rating)
+
+    def _set_metadata_columns(self, row: int, summary: dict):
+        """Fill the Scan Type / hv / Temp columns from a cached metadata summary."""
+        scan_type = summary.get('Type')
+        type_item = QTableWidgetItem(str(scan_type) if scan_type is not None else "N/A")
+        type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, 2, type_item)
+
+        hv = summary.get('hv')
+        hv_text = f"{hv:.4g}" if isinstance(hv, (int, float)) else "N/A"
+        self.table.setItem(row, 3, NumericTableWidgetItem(hv_text, hv))
+
+        temp = summary.get('Temp')
+        temp_text = f"{temp:.4g}" if isinstance(temp, (int, float)) else "N/A"
+        self.table.setItem(row, 4, NumericTableWidgetItem(temp_text, temp))
     
     def _populate_grid(self, files: list):
         """Populate the grid view with thumbnail previews."""
         self.grid_list.clear()
-        
-        for filename in files:
-            filepath = os.path.join(self._current_folder, filename)
-            
+
+        for filepath in files:
+            filename = os.path.basename(filepath)
+            if filepath not in self._metadata_cache:
+                self._schedule_metadata_load(filepath)
+
             item = QListWidgetItem()
             item.setData(Qt.UserRole, filepath)
             
@@ -519,9 +709,14 @@ class FileListPanel(QWidget):
             display_name = filename
             if len(display_name) > max_chars:
                 display_name = display_name[:max_chars - 3] + "..."
+            if filepath in self._compare_pins:
+                display_name = f"📌 {display_name}"
+            rating_text = self._rating_display(filepath)
+            if rating_text:
+                display_name = f"{display_name}\n{rating_text}"
             item.setText(display_name)
             item.setTextAlignment(Qt.AlignHCenter | Qt.AlignBottom)
-            item.setToolTip(filename)
+            item.setToolTip(f"{filename}\n{rating_text}" if rating_text else filename)
             
             item.setSizeHint(QSize(self._thumbnail_size + 20, self._thumbnail_size + 40))
             
@@ -615,7 +810,53 @@ class FileListPanel(QWidget):
             if item and item.data(Qt.UserRole) == filepath:
                 item.setIcon(QIcon(pixmap))
                 break
-    
+
+    def _schedule_metadata_load(self, filepath: str):
+        """Schedule async metadata extraction (Type/hv/Temp) for a file."""
+        if filepath in self._pending_metadata:
+            return
+
+        self._pending_metadata.add(filepath)
+
+        worker = MetadataIndexWorker(filepath)
+        worker.signals.finished.connect(self._on_metadata_ready)
+        worker.signals.error.connect(self._on_metadata_error)
+
+        self._thread_pool.start(worker)
+
+    def _on_metadata_ready(self, filepath: str, summary: dict):
+        """Handle completed metadata extraction."""
+        self._pending_metadata.discard(filepath)
+        self._metadata_cache[filepath] = summary
+
+        if self._scan_type_filter != "All" and summary.get('Type') != self._scan_type_filter:
+            # No longer belongs in the filtered view - drop it on refresh.
+            self._refresh_display()
+            return
+
+        if self._is_grid_view:
+            return  # Grid view doesn't show these columns.
+
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(Qt.UserRole) == filepath:
+                self._set_metadata_columns(row, summary)
+                break
+
+    def _on_metadata_error(self, filepath: str, error: str):
+        """Handle metadata extraction error - leave columns as N/A."""
+        self._pending_metadata.discard(filepath)
+        self._metadata_cache[filepath] = {'Type': None, 'hv': None, 'Temp': None}
+
+        if self._is_grid_view:
+            return
+
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(Qt.UserRole) == filepath:
+                self._set_metadata_columns(row, self._metadata_cache[filepath])
+                break
+
     def _on_cell_clicked(self, row: int, column: int):
         """Handle table cell click."""
         item = self.table.item(row, 0)
@@ -666,3 +907,117 @@ class FileListPanel(QWidget):
     def clear_thumbnail_cache(self):
         """Clear the thumbnail cache to free memory."""
         self._thumbnail_cache.clear()
+
+    def _on_table_context_menu(self, pos):
+        """Show the right-click menu for a table row."""
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+        name_item = self.table.item(item.row(), 0)
+        filepath = name_item.data(Qt.UserRole) if name_item else None
+        if filepath:
+            self._show_file_context_menu(filepath, self.table.viewport().mapToGlobal(pos))
+
+    def _on_grid_context_menu(self, pos):
+        """Show the right-click menu for a grid item."""
+        item = self.grid_list.itemAt(pos)
+        if not item:
+            return
+        filepath = item.data(Qt.UserRole)
+        if filepath:
+            self._show_file_context_menu(filepath, self.grid_list.viewport().mapToGlobal(pos))
+
+    def _show_file_context_menu(self, filepath: str, global_pos):
+        """Build and show the context menu for a single file."""
+        menu = QMenu(self)
+
+        current_entry = self._ratings_cache.get(filepath, {"rating": 0, "rejected": False})
+
+        rating_menu = menu.addMenu("⭐ Rating")
+        for stars in range(0, 6):
+            label = "No Rating" if stars == 0 else "★" * stars + "☆" * (5 - stars)
+            if current_entry.get('rating', 0) == stars and not current_entry.get('rejected'):
+                label = f"✓ {label}"
+            action = rating_menu.addAction(label)
+            action.triggered.connect(
+                lambda checked=False, s=stars: self._set_file_rating(filepath, s)
+            )
+
+        reject_label = "🚫 Unmark Reject" if current_entry.get('rejected') else "🚫 Mark as Reject"
+        reject_action = menu.addAction(reject_label)
+        reject_action.triggered.connect(
+            lambda: self._set_file_rejected(filepath, not current_entry.get('rejected'))
+        )
+
+        menu.addSeparator()
+
+        pin_label = "📌 Unpin from Compare" if filepath in self._compare_pins else "📌 Pin for Compare"
+        pin_action = menu.addAction(pin_label)
+        pin_action.triggered.connect(lambda: self._toggle_compare_pin(filepath))
+
+        menu.addSeparator()
+        collections_menu = menu.addMenu("⭐ Add to Collection")
+        collections = get_collections()
+        if collections:
+            for name, info in sorted(collections.items()):
+                in_collection = filepath in info.get('files', [])
+                action = collections_menu.addAction(f"{'✓ ' if in_collection else ''}{name}")
+                action.triggered.connect(
+                    lambda checked=False, n=name, present=in_collection: self._toggle_file_in_collection(filepath, n, present)
+                )
+        else:
+            empty_action = collections_menu.addAction("(no collections yet)")
+            empty_action.setEnabled(False)
+
+        collections_menu.addSeparator()
+        new_action = collections_menu.addAction("+ New Collection…")
+        new_action.triggered.connect(lambda: self._add_file_to_new_collection(filepath))
+
+        menu.exec(global_pos)
+
+    def _toggle_file_in_collection(self, filepath: str, name: str, currently_in: bool):
+        """Add or remove a file from an existing collection."""
+        if currently_in:
+            remove_file_from_collection(name, filepath)
+        else:
+            add_file_to_collection(name, filepath)
+
+    def _add_file_to_new_collection(self, filepath: str):
+        """Prompt for a new collection name and add the file to it."""
+        name, ok = QInputDialog.getText(self, "New Collection", "Collection name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        if not create_collection(name):
+            QMessageBox.warning(self, "Collection Exists", f"A collection named '{name}' already exists.")
+            return
+        add_file_to_collection(name, filepath)
+        self.collections_changed.emit()
+
+    def _toggle_compare_pin(self, filepath: str):
+        """Toggle whether a file is pinned for side-by-side comparison."""
+        if filepath in self._compare_pins:
+            self._compare_pins.remove(filepath)
+        else:
+            self._compare_pins.append(filepath)
+            if len(self._compare_pins) > MAX_COMPARE_SLOTS:
+                self._compare_pins.pop(0)
+
+        self.compare_pins_changed.emit(list(self._compare_pins))
+        self._refresh_display()
+
+    def _set_file_rating(self, filepath: str, stars: int):
+        """Set a file's star rating (0-5), stored in its folder's ratings sidecar."""
+        ratings.set_rating(filepath, stars)
+        entry = dict(self._ratings_cache.get(filepath, {"rating": 0, "rejected": False}))
+        entry['rating'] = stars
+        self._ratings_cache[filepath] = entry
+        self._refresh_display()
+
+    def _set_file_rejected(self, filepath: str, rejected: bool):
+        """Set a file's reject flag, stored in its folder's ratings sidecar."""
+        ratings.set_rejected(filepath, rejected)
+        entry = dict(self._ratings_cache.get(filepath, {"rating": 0, "rejected": False}))
+        entry['rejected'] = rejected
+        self._ratings_cache[filepath] = entry
+        self._refresh_display()

@@ -17,6 +17,7 @@ import pyqtgraph as pg
 from ADAPT_browser.core.data_manager import DataResult
 from ADAPT_browser.utils.meta_format import format_metadata, format_shape_dtype
 from ADAPT_browser.utils.logger import logger
+from ADAPT_browser.utils.plotting import apply_colormap_to_image
 
 
 class ViewerPanel(QWidget):
@@ -430,21 +431,7 @@ class ViewerPanel(QWidget):
     
     def _apply_colormap(self, cmap_name: str, invert: bool = False):
         """Apply a colormap to the image item."""
-        try:
-            # Use matplotlib colormaps via pyqtgraph
-            from matplotlib import colormaps
-            cmap = colormaps.get_cmap(cmap_name)
-            
-            # Create lookup table from colormap (256 colors)
-            if invert:
-                lut = (cmap(np.linspace(1, 0, 256)) * 255).astype(np.uint8)
-            else:
-                lut = (cmap(np.linspace(0, 1, 256)) * 255).astype(np.uint8)
-                
-            self.image_item.setLookupTable(lut)
-        except Exception as e:
-            # Fallback to default
-            logger.warning(f"Failed to apply colormap {cmap_name}: {e}")
+        apply_colormap_to_image(self.image_item, cmap_name, invert)
     
     def _on_mouse_moved(self, pos):
         """Handle mouse movement for cursor info."""

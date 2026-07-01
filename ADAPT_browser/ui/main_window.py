@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QToolBar, QComboBox, QSplitter, QStatusBar,
     QFileDialog, QLabel, QApplication, QSizePolicy,
-    QProgressBar, QCheckBox, QMessageBox
+    QProgressBar, QCheckBox, QMessageBox, QStackedWidget, QMenu, QToolButton
 )
 from PySide6.QtCore import Qt, QSize, QTimer, QFileSystemWatcher
 from PySide6.QtGui import QAction, QIcon, QPalette, QColor
@@ -17,15 +17,26 @@ from PySide6.QtGui import QAction, QIcon, QPalette, QColor
 from .directory_panel import DirectoryPanel
 from .file_list_panel import FileListPanel
 from .viewer_panel import ViewerPanel
+from .compare_panel import ComparePanel
+from .collections_panel import CollectionsPanel
 from ADAPT_browser.core.data_manager import DataManager, DataResult
 from ADAPT_browser.utils.logger import logger
 
 try:
-    from shared.session import write_session
+    from shared.session import write_session, get_collections, get_recent_folders, add_recent_folder
 except ImportError:
     # Fallback if shared module not available
     def write_session(file_path, metadata=None):
         logger.warning("Session manager not available")
+        return False
+
+    def get_collections():
+        return {}
+
+    def get_recent_folders():
+        return []
+
+    def add_recent_folder(path):
         return False
 
 
@@ -323,6 +334,16 @@ class MainWindow(QMainWindow):
         self.open_action.triggered.connect(self._on_open_folder)
         toolbar.addAction(self.open_action)
 
+        # Recent Folders menu
+        self.recent_button = QToolButton()
+        self.recent_button.setText("🕐 Recent")
+        self.recent_button.setPopupMode(QToolButton.InstantPopup)
+        self.recent_button.setToolTip("Recently opened folders")
+        self.recent_menu = QMenu(self.recent_button)
+        self.recent_button.setMenu(self.recent_menu)
+        self._refresh_recent_menu()
+        toolbar.addWidget(self.recent_button)
+
         # Watch Folder toggle
         self.watch_folder_action = QAction("👁 Watch Folder", self)
         self.watch_folder_action.setCheckable(True)
@@ -373,7 +394,16 @@ class MainWindow(QMainWindow):
         self.open_viewer_action.setToolTip("Open selected file in ADAPT Edit (web-based 3D visualization)")
         self.open_viewer_action.triggered.connect(self._on_open_with_viewer)
         toolbar.addAction(self.open_viewer_action)
-        
+
+        # Compare mode toggle
+        self.compare_action = QAction("🆚 Compare", self)
+        self.compare_action.setCheckable(True)
+        self.compare_action.setToolTip(
+            "Right-click up to two files and 'Pin for Compare' to view them side by side"
+        )
+        self.compare_action.toggled.connect(self._on_compare_toggled)
+        toolbar.addAction(self.compare_action)
+
         # Spacer
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -402,28 +432,49 @@ class MainWindow(QMainWindow):
         # Main splitter
         self.splitter = QSplitter(Qt.Horizontal)
         
-        # Left panel: Directory tree
+        # Left column: Collections list (top) + Directory tree (bottom)
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left_widget.setMinimumWidth(180)
+        left_widget.setMaximumWidth(300)
+
+        self.collections_panel = CollectionsPanel()
+        self.collections_panel.setMaximumHeight(160)
+        self.collections_panel.collection_selected.connect(self._on_collection_selected)
+        left_layout.addWidget(self.collections_panel)
+
         self.dir_panel = DirectoryPanel()
-        self.dir_panel.setMinimumWidth(180)
-        self.dir_panel.setMaximumWidth(300)
         self.dir_panel.folder_selected.connect(self._on_folder_selected)
-        self.splitter.addWidget(self.dir_panel)
-        
+        left_layout.addWidget(self.dir_panel, 1)
+
+        self.splitter.addWidget(left_widget)
+
         # Middle panel: File list
         self.file_panel = FileListPanel()
         self.file_panel.setMinimumWidth(200)
         # No max width - let the user resize freely
         self.file_panel.file_selected.connect(self._on_file_selected)
+        self.file_panel.compare_pins_changed.connect(self._on_compare_pins_changed)
+        self.file_panel.collections_changed.connect(self.collections_panel.refresh)
         self.splitter.addWidget(self.file_panel)
-        
-        # Right panel: Viewer
+
+        # Right panel: Viewer / Compare (stacked)
         self.viewer_panel = ViewerPanel()
-        self.viewer_panel.setMinimumWidth(400)
         self.viewer_panel.cursor_moved.connect(self._on_cursor_moved)
-        self.splitter.addWidget(self.viewer_panel)
-        
-        # Set initial sizes (roughly 15%, 20%, 65%)
-        self.splitter.setSizes([200, 250, 750])
+
+        self.compare_panel = ComparePanel()
+
+        self.right_stack = QStackedWidget()
+        self.right_stack.setMinimumWidth(400)
+        self.right_stack.addWidget(self.viewer_panel)   # Index 0
+        self.right_stack.addWidget(self.compare_panel)  # Index 1
+        self.splitter.addWidget(self.right_stack)
+
+        # Set initial sizes (roughly 15%, 30%, 55%) - the file list needs
+        # extra room now that it shows Scan Type/hv/Temp columns
+        self.splitter.setSizes([200, 420, 580])
         
         layout.addWidget(self.splitter)
     
@@ -491,7 +542,38 @@ class MainWindow(QMainWindow):
         logger.debug(f"Folder selected: {folder_path}")
         self.file_panel.set_folder(folder_path)
         self._set_watched_folder(folder_path)
-    
+        add_recent_folder(folder_path)
+        self._refresh_recent_menu()
+
+    def _refresh_recent_menu(self):
+        """Rebuild the Recent Folders menu from persisted app state."""
+        self.recent_menu.clear()
+        recent = get_recent_folders()
+
+        if not recent:
+            empty_action = self.recent_menu.addAction("(no recent folders)")
+            empty_action.setEnabled(False)
+            return
+
+        for path in recent:
+            action = self.recent_menu.addAction(path)
+            action.triggered.connect(lambda checked=False, p=path: self._open_recent_folder(p))
+
+    def _open_recent_folder(self, path: str):
+        """Reopen a folder from the Recent Folders menu."""
+        if not os.path.isdir(path):
+            QMessageBox.warning(self, "Folder Not Found", f"This folder no longer exists:\n{path}")
+            return
+        self.dir_panel.set_root_path(path)
+
+    def _on_collection_selected(self, name: str):
+        """Handle a collection being selected - show its files (a virtual, cross-folder folder)."""
+        logger.debug(f"Collection selected: {name}")
+        collection = get_collections().get(name, {})
+        paths = collection.get('files', [])
+        self.file_panel.set_file_list(paths, f"⭐ {name}")
+        self._set_watched_folder("")
+
     def _on_filter_changed(self, filter_type: str):
         """Handle file filter change."""
         logger.debug(f"Filter changed: {filter_type}")
@@ -558,16 +640,28 @@ class MainWindow(QMainWindow):
         invert = self.invert_checkbox.isChecked()
         self.viewer_panel.set_colormap(cmap_name, invert)
         self.file_panel.set_colormap(cmap_name, invert)
-    
+        self.compare_panel.set_colormap(cmap_name, invert)
+
     def _on_invert_toggled(self, checked: bool):
         """Handle invert toggle."""
         cmap = self.cmap_combo.currentText()
         self.viewer_panel.set_colormap(cmap, checked)
         self.file_panel.set_colormap(cmap, checked)
-        
+        self.compare_panel.set_colormap(cmap, checked)
+
     def _on_theme_changed(self, theme_name: str):
         """Handle theme change."""
         self._apply_theme(theme_name)
+
+    def _on_compare_toggled(self, checked: bool):
+        """Switch the right-hand panel between the single viewer and compare mode."""
+        self.right_stack.setCurrentIndex(1 if checked else 0)
+
+    def _on_compare_pins_changed(self, paths: list):
+        """Update the compare panel when the pinned file set changes."""
+        self.compare_panel.set_pins(paths)
+        if paths and not self.compare_action.isChecked():
+            self.compare_action.setChecked(True)
 
     def _on_watch_folder_toggled(self, checked: bool):
         """Enable or disable automatic refresh for the selected folder."""
